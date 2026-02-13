@@ -11,7 +11,7 @@ from datetime import datetime
 
 # --- 1. 页面与样式配置 ---
 st.set_page_config(
-    page_title="隧道工程检验批划分系统 Pro v9.9",
+    page_title="隧道工程检验批划分系统 Pro v10.5",
     page_icon="🚇",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -38,8 +38,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# 【重要修复】防乱码字体设置：优先调用服务器开源中文字体，本地兜底
 plt.style.use('ggplot') 
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans']
+plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
 # --- 2. 数据结构定义 ---
@@ -114,7 +115,7 @@ def import_project_from_json(json_str: str) -> Optional[Project]:
         st.error(f"文件解析失败: {e}")
         return None
 
-# --- 4. 默认数据生成器 ---
+# --- 4. 默认数据生成器 (完整真实数据) ---
 
 def create_zk_segments() -> List[TunnelSegment]:
     segments = []
@@ -254,7 +255,7 @@ def draw_enhanced_profile(segments: List[TunnelSegment], tunnel_name: str, direc
     if total_len <= 0: return None
     
     colors = {'明挖': '#FF6B6B', 'CD法': '#4ECDC4', '台阶法': '#45B7D1', '洞口': '#96CEB4'}
-    fig, ax = plt.subplots(figsize=(12, 4.5), dpi=100) # 增加了图表高度
+    fig, ax = plt.subplots(figsize=(12, 4.5), dpi=100)
     ax.set_facecolor('#F9F9F9')
     
     for seg in segments:
@@ -281,7 +282,6 @@ def draw_enhanced_profile(segments: List[TunnelSegment], tunnel_name: str, direc
     
     legs = [patches.Patch(color=c, label=l) for l,c in colors.items()]
     ax.legend(handles=legs, loc='upper right', fontsize='small', frameon=False, ncol=4)
-    # 修改点：标题美化，更改文案、加大字号、增加间距
     ax.set_title(f"{tunnel_name} 施工工法纵断面图", fontsize=16, fontweight='bold', pad=20)
     plt.tight_layout()
     return fig
@@ -502,7 +502,6 @@ def main():
                 current_project.tunnels.remove(target_tunnel)
                 st.rerun()
 
-        # 修改点：标题文字更正
         st.markdown("##### 1. 隧道工法纵断面图")
         fig = draw_enhanced_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
         if fig: st.pyplot(fig)
@@ -619,7 +618,6 @@ def main():
     # ===== 页面：检验批计算 (自动静默计算) =====
     elif page == "📊 检验批计算":
         st.markdown(f"<h2>📊 检验批计算 - {current_project.name}</h2>", unsafe_allow_html=True)
-        st.info("📌 **精度及标准说明**：分部分项带有前缀序号，导出严格按序排列！导出的数据长度保留 3 位小数。起止桩号自动随【正反向】调整。")
         
         with st.spinner("🚀 正在自动执行全线智能扫描与精准计算，请稍候..."):
             calc = InspectionCalculator()
