@@ -10,11 +10,11 @@ import json
 import base64
 import os
 from datetime import datetime
-import streamlit.components.v1 as components  # 新增：引入组件库以执行防拦截 JS
+import streamlit.components.v1 as components 
 
 # --- 1. 页面与样式配置 ---
 st.set_page_config(
-    page_title="隧道工程检验批划分系统 Pro v12.2",
+    page_title="隧道工程检验批划分系统 Pro v13.0",
     page_icon="🚇",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -261,26 +261,6 @@ A.0.5 影像资料采集频率应与有关检验批验收频率一致。""",
 12.7.1 严禁随意弃渣，弃渣场必须按设计位置堆放并做好挡护、复垦、绿化，避免安全及环境隐患。"""
     }
 
-def get_tb10417_db():
-    data = [
-        {"分部工程": "06 洞口工程", "分项工程": "洞口开挖", "条款号": "6.2.1~6.2.2", "性质": "主控项目", "核心内容": "边、仰坡的范围、形式及坡度应符合设计要求。"},
-        {"分部工程": "06 洞口工程", "分项工程": "洞口开挖", "条款号": "6.2.3~6.2.4", "性质": "一般项目", "核心内容": "洞口开挖允许偏差；边、仰坡应稳定，无危石。"},
-        {"分部工程": "06 洞口工程", "分项工程": "导向墙(洞门)", "条款号": "6.4.1~6.4.4", "性质": "主控项目", "核心内容": "基底承载力、断面尺寸、混凝土强度及变形缝处理应符合设计。"},
-        {"分部工程": "06 洞口工程", "分项工程": "导向墙(洞门)", "条款号": "6.4.5~6.4.6", "性质": "一般项目", "核心内容": "泄水孔位置、间距通畅；预埋件及预留孔洞偏差符合表6.4.6规定。"},
-        {"分部工程": "06 洞口工程", "分项工程": "回填", "条款号": "6.5.1~6.5.2", "性质": "主控项目", "核心内容": "回填材料、粒径应符合设计要求；回填压实质量应符合设计要求。"},
-        {"分部工程": "07 洞身开挖", "分项工程": "洞身开挖", "条款号": "7.2.1~7.2.3", "性质": "主控项目", "核心内容": "开挖断面的中线和高程符合设计；严格控制欠挖；地质情况及地基承载力检验。"},
-        {"分部工程": "08 支护", "分项工程": "喷射混凝土", "条款号": "8.6.1~8.6.3", "性质": "主控项目", "核心内容": "24h强度不小于10MPa；实体强度符合设计；平均厚度满足要求。"},
-        {"分部工程": "08 支护", "分项工程": "喷射混凝土", "条款号": "8.6.4", "性质": "一般项目", "核心内容": "表面平顺，两突出物之间的深长比(D/L)不应大于1/20。"},
-        {"分部工程": "08 支护", "分项工程": "钢筋网", "条款号": "8.7.1~8.7.2", "性质": "主控项目", "核心内容": "网格尺寸符合设计；搭接长度不少于1个网格。"},
-        {"分部工程": "08 支护", "分项工程": "系统锚杆", "条款号": "8.8.1~8.8.3", "性质": "主控项目", "核心内容": "类型、规格、数量符合设计；胶结及锚固长度符合要求。"},
-        {"分部工程": "08 支护", "分项工程": "钢架", "条款号": "8.9.1~8.9.3", "性质": "主控项目", "核心内容": "规格、材质、数量符合设计；基础牢固、连接符合设计。"},
-        {"分部工程": "09 衬砌", "分项工程": "仰拱(底板)和填充", "条款号": "9.2.1~9.2.6", "性质": "主控项目", "核心内容": "基底清理、尺寸、钢筋、预埋件、强度、抗渗、密实度符合设计。"},
-        {"分部工程": "09 衬砌", "分项工程": "拱墙衬砌", "条款号": "9.3.1~9.3.7", "性质": "主控项目", "核心内容": "净空断面、钢筋规格、强度、厚度及密实度符合设计要求。"},
-        {"分部工程": "10 防排水", "分项工程": "防水板", "条款号": "10.3.1~10.3.5", "性质": "主控项目", "核心内容": "材质、基面平顺度、搭接宽度、焊缝质量符合设计要求。"},
-        {"分部工程": "10 防排水", "分项工程": "排水盲管", "条款号": "10.7.1~10.7.4", "性质": "主控项目", "核心内容": "盲管品种规格符合设计；不应低于水沟底面高程；连接牢固、畅通无阻。"}
-    ]
-    return pd.DataFrame(data)
-
 # --- 4. 默认数据生成器 ---
 
 def create_zk_segments() -> List[TunnelSegment]:
@@ -459,8 +439,8 @@ class InspectionCalculator:
         '01': {'name': '01 加固处理', 'items': {'01': {'name': '01 危岩处治', 'formula': '每洞口1处', 'main': '-', 'gen': '-'}}},
         '02': {'name': '02 洞口工程', 'items': {
             '01': {'name': '01 边坡、基槽(洞口开挖)', 'formula': '每洞口1批', 'main': '6.2.1~6.2.2', 'gen': '6.2.3~6.2.4'}, 
-            '02': {'name': '02 支护', 'formula': '每洞口3批(锚/网/喷)', 'main': '6.6.1~6.6.2', 'gen': '-'}, 
-            '03': {'name': '03 导向墙(含洞门)', 'formula': '每洞口3批(模/筋/砼)', 'main': '6.4.1~6.4.4', 'gen': '6.4.5~6.4.6'}, 
+            '02': {'name': '02 支护', 'formula': '每洞口3批', 'main': '6.6.1~6.6.2', 'gen': '-'}, 
+            '03': {'name': '03 导向墙(含洞门)', 'formula': '每洞口3批', 'main': '6.4.1~6.4.4', 'gen': '6.4.5~6.4.6'}, 
             '04': {'name': '04 回填', 'formula': '每洞口1批', 'main': '6.5.1~6.5.2', 'gen': '6.5.3'}}},
         '03': {'name': '03 超前支护', 'items': {
             '01': {'name': '01 超前锚杆', 'formula': '每洞口1批', 'main': '8.8.1~8.8.3', 'gen': '8.8.4~8.8.5'}, 
@@ -470,13 +450,13 @@ class InspectionCalculator:
             '01': {'name': '01 CD法', 'formula': '循环数×4步', 'main': '7.2.1~7.2.3', 'gen': '-'}, 
             '02': {'name': '02 台阶法', 'formula': '循环数×2步', 'main': '7.2.1~7.2.3', 'gen': '-'}}},
         '05': {'name': '05 初期支护', 'items': {
-            '01': {'name': '01 锚杆', 'formula': '循环数×4', 'main': '8.8.1~8.8.3', 'gen': '8.8.4~8.8.5'}, 
-            '02': {'name': '02 钢架', 'formula': '循环数×4', 'main': '8.9.1~8.9.3', 'gen': '8.9.4'}, 
-            '03': {'name': '03 钢筋网', 'formula': '循环数×4', 'main': '8.7.1~8.7.2', 'gen': '8.7.3'}, 
-            '04': {'name': '04 喷射混凝土', 'formula': '循环数×4', 'main': '8.6.1~8.6.3', 'gen': '8.6.4'}}},
+            '01': {'name': '01 锚杆', 'formula': '循环数×4批', 'main': '8.8.1~8.8.3', 'gen': '8.8.4~8.8.5'}, 
+            '02': {'name': '02 钢架', 'formula': '循环数×4批', 'main': '8.9.1~8.9.3', 'gen': '8.9.4'}, 
+            '03': {'name': '03 钢筋网', 'formula': '循环数×4批', 'main': '8.7.1~8.7.2', 'gen': '8.7.3'}, 
+            '04': {'name': '04 喷射混凝土', 'formula': '循环数×4批', 'main': '8.6.1~8.6.3', 'gen': '8.6.4'}}},
         '06': {'name': '06 衬砌工程', 'items': {
-            '01': {'name': '01 仰拱(底板)和填充', 'formula': '环数×3(模/筋/砼)', 'main': '9.2.1~9.2.6', 'gen': '9.2.7~9.2.8'}, 
-            '02': {'name': '02 拱墙衬砌', 'formula': '环数×3(模/筋/砼)', 'main': '9.3.1~9.3.7', 'gen': '9.3.8~9.3.10'}}},
+            '01': {'name': '01 仰拱(底板)和填充', 'formula': '环数×3', 'main': '9.2.1~9.2.6', 'gen': '9.2.7~9.2.8'}, 
+            '02': {'name': '02 拱墙衬砌', 'formula': '环数×3', 'main': '9.3.1~9.3.7', 'gen': '9.3.8~9.3.10'}}},
         '07': {'name': '07 防水排水', 'items': {
             '01': {'name': '01 防水板', 'formula': '环数', 'main': '10.3.1~10.3.5', 'gen': '10.3.6~10.3.7'}, 
             '02': {'name': '02 排水管(盲管)', 'formula': '环数', 'main': '10.7.1~10.7.4', 'gen': '10.7.5'}, 
@@ -508,7 +488,7 @@ class InspectionCalculator:
         results['divisions'][d]['items'][i]['batches'].append(batch)
         results['all_batches'].append(batch)
 
-    def calculate_single_tunnel(self, tunnel: Tunnel) -> Dict:
+    def calculate_single_tunnel(self, tunnel: Tunnel):
         results = {'tunnel_name': tunnel.name, 'divisions': {}, 'summary': {}, 'all_batches': []}
         for d_code, d_info in self.DIVISIONS.items():
             results['divisions'][d_code] = {'name': d_info['name'], 'items': {}, 'total_batches': 0}
@@ -516,6 +496,17 @@ class InspectionCalculator:
                 results['divisions'][d_code]['items'][i_code] = {'name': i_info['name'], 'batches': [], 'count': 0}
 
         dir_sign = 1 if tunnel.direction == "正向" else -1
+
+        # 计算各类基数
+        cd_cycles = 0
+        tj_cycles = 0
+        for seg in tunnel.segments:
+            if seg.method not in ['CD法', '台阶法']: continue
+            cycles = int(seg.length / seg.advance_per_cycle) if seg.advance_per_cycle > 0 else 0
+            if seg.method == 'CD法': cd_cycles += cycles
+            else: tj_cycles += cycles
+        total_cycles = cd_cycles + tj_cycles
+        rings = math.ceil(tunnel.total_length / tunnel.trolley_length) if tunnel.trolley_length > 0 else 0
 
         # 1. 洞口 & 超前
         for d, i_codes in [('02', ['01','04']), ('03', ['01','02','03'])]:
@@ -552,16 +543,14 @@ class InspectionCalculator:
                         self._add_batch(results, tunnel.name, tunnel.id, '05', ic_sup, seq, f"{seg.name}-{s_name}", start, end)
 
         # 3. 衬砌/防排水/附属
-        trolley = tunnel.trolley_length
-        if trolley > 0:
-            rings = math.ceil(tunnel.total_length / trolley)
+        if tunnel.trolley_length > 0:
             base_t_start = min(tunnel.start_mileage, tunnel.end_mileage) if dir_sign == 1 else max(tunnel.start_mileage, tunnel.end_mileage)
             base_t_end = max(tunnel.start_mileage, tunnel.end_mileage) if dir_sign == 1 else min(tunnel.start_mileage, tunnel.end_mileage)
             
             for r in range(rings):
-                start = base_t_start + r * trolley * dir_sign
-                if dir_sign == 1: end = min(start + trolley, base_t_end)
-                else: end = max(start - trolley, base_t_end)
+                start = base_t_start + r * tunnel.trolley_length * dir_sign
+                if dir_sign == 1: end = min(start + tunnel.trolley_length, base_t_end)
+                else: end = max(start - tunnel.trolley_length, base_t_end)
                 
                 for idx, sub_item in enumerate(['模板', '钢筋', '混凝土']):
                     seq = r * 3 + idx + 1
@@ -571,29 +560,74 @@ class InspectionCalculator:
                 for ic in ['01','02','03']: self._add_batch(results, tunnel.name, tunnel.id, '07', ic, r+1, '防排水', start, end)
                 for ic in ['01','02','03','04']: self._add_batch(results, tunnel.name, tunnel.id, '08', ic, r+1, '附属', start, end)
 
+        # 提取分部分项高级汇总 (含计算基数与公式)
         total = 0
+        subitem_res = []
         for d_code, d_data in results['divisions'].items():
+            for i_code, i_data in d_data['items'].items():
+                count = len(i_data['batches'])
+                if count == 0: continue
+                
+                name = i_data['name']
+                rule = self.DIVISIONS[d_code]['items'][i_code]['formula']
+                
+                calc_base = "-"
+                if '洞口' in rule:
+                    calc_base = "2 个洞口"
+                    calc_str = f"{calc_base} × 3 批/洞口 = {count} 批" if '3批' in rule else f"{calc_base} × 1 批/洞口 = {count} 批"
+                elif 'CD法' in name:
+                    calc_base = f"{cd_cycles} 循环"
+                    calc_str = f"{calc_base} × 4 步/循环 = {count} 批"
+                elif '台阶法' in name:
+                    calc_base = f"{tj_cycles} 循环"
+                    calc_str = f"{calc_base} × 2 步/循环 = {count} 批"
+                elif '循环' in rule: 
+                    calc_base = f"{total_cycles} 循环"
+                    calc_str = f"{calc_base} × 4 批/循环 = {count} 批"
+                elif '环数×3' in rule:
+                    calc_base = f"{rings} 衬砌环"
+                    calc_str = f"{calc_base} × 3 批/环 = {count} 批"
+                elif '环数' in rule:
+                    calc_base = f"{rings} 衬砌环"
+                    calc_str = f"{calc_base} × 1 批/环 = {count} 批"
+                else:
+                    calc_str = f"按部位累加 = {count} 批"
+                    
+                subitem_res.append({
+                    '隧道': tunnel.name,
+                    '分部工程': d_data['name'],
+                    '分项工程': name,
+                    '计算基数(循环/环/洞口)': calc_base,
+                    '检验批计算式': calc_str,
+                    '检验批数量': count
+                })
+                
             d_total = sum(len(i['batches']) for i in d_data['items'].values())
             results['summary'][d_data['name']] = d_total
             total += d_total
+            
         results['summary']['合计'] = total
-        return results
+        return results, subitem_res
 
     def calculate(self, project: Project):
         grand_total = 0
         summary_list = []
         all_batches_flat = []
+        subitem_summary_flat = []
+        
         for tunnel in project.tunnels:
-            tunnel_res = self.calculate_single_tunnel(tunnel)
+            tunnel_res, subitem_res = self.calculate_single_tunnel(tunnel)
             sum_dict = {'隧道': tunnel.name}
             sum_dict.update(tunnel_res['summary'])
             summary_list.append(sum_dict)
             grand_total += tunnel_res['summary']['合计']
             all_batches_flat.extend(tunnel_res['all_batches'])
+            subitem_summary_flat.extend(subitem_res)
 
         df_sum = pd.DataFrame(summary_list)
         df_detail = pd.DataFrame(all_batches_flat)
-        return grand_total, df_sum, df_detail
+        df_subitem = pd.DataFrame(subitem_summary_flat)
+        return grand_total, df_sum, df_subitem, df_detail
 
 # --- 7. 主程序 GUI ---
 
@@ -793,13 +827,14 @@ def main():
     # ===== 页面：检验批计算 (自动静默计算) =====
     elif page == "📊 检验批计算":
         st.markdown(f"<h2>📊 检验批计算 - {current_project.name}</h2>", unsafe_allow_html=True)
+        st.info("📌 **智能推演说明**：系统已自动提取全线【开挖循环数】与【二衬浇筑环数】，生成带计算式溯源的分部分项表！")
         
         with st.spinner("🚀 正在自动执行全线智能扫描与精准计算，请稍候..."):
             calc = InspectionCalculator()
-            total, df_sum, df_detail = calc.calculate(current_project)
-            st.session_state.last_result = (total, df_sum, df_detail)
+            total, df_sum, df_subitem, df_detail = calc.calculate(current_project)
+            st.session_state.last_result = (total, df_sum, df_subitem, df_detail)
             
-        total, df_sum, df_detail = st.session_state.last_result
+        total, df_sum, df_subitem, df_detail = st.session_state.last_result
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.markdown(f'<div class="metric-card bg-blue"><div class="metric-title">全线检验批总数</div><div class="metric-value">{total:,}</div></div>', unsafe_allow_html=True)
         with c2: 
@@ -815,17 +850,14 @@ def main():
         st.markdown("### 1. 分部工程汇总表")
         st.dataframe(df_sum, use_container_width=True)
         
-        st.markdown("### 2. 分部分项汇总表")
-        df_subitem = df_detail.groupby(['隧道', '分部工程', '分项工程'], as_index=False).size()
-        df_subitem.rename(columns={'size': '检验批数量'}, inplace=True)
-        df_subitem = df_subitem.sort_values(by=['隧道', '分部工程', '分项工程'], ascending=[True, True, True])
+        st.markdown("### 2. 分部分项汇总表 (带基数与计算说明)")
         st.dataframe(df_subitem, use_container_width=True)
         
-        st.markdown("### 3. 数据导出区 (含规范条文赋码)")
+        st.markdown("### 3. 数据导出区")
         c_d1, c_d2, c_d3 = st.columns(3)
         with c_d1: st.download_button("📥 导出【分部汇总表】", df_sum.to_csv(index=False, float_format='%.3f').encode('utf-8-sig'), f"{current_project.name}_分部汇总.csv", "text/csv", use_container_width=True)
-        with c_d2: st.download_button("📥 导出【分部分项汇总表】", df_subitem.to_csv(index=False).encode('utf-8-sig'), f"{current_project.name}_分部分项汇总.csv", "text/csv", use_container_width=True)
-        with c_d3: st.download_button("📥 导出【详细明细表】", df_detail.to_csv(index=False, float_format='%.3f').encode('utf-8-sig'), f"{current_project.name}_明细.csv", "text/csv", use_container_width=True)
+        with c_d2: st.download_button("📥 导出【分部分项汇总表】", df_subitem.to_csv(index=False).encode('utf-8-sig'), f"{current_project.name}_分部分项汇总(带公式).csv", "text/csv", use_container_width=True)
+        with c_d3: st.download_button("📥 导出【详细明细表】", df_detail.to_csv(index=False, float_format='%.3f').encode('utf-8-sig'), f"{current_project.name}_明细(带条文号).csv", "text/csv", use_container_width=True)
 
     # ===== 页面：统计看板 =====
     elif page == "📉 统计看板":
@@ -833,10 +865,10 @@ def main():
         
         with st.spinner("🚀 正在准备可视化数据，请稍候..."):
             calc = InspectionCalculator()
-            total, df_sum, df_detail = calc.calculate(current_project)
-            st.session_state.last_result = (total, df_sum, df_detail)
+            total, df_sum, df_subitem, df_detail = calc.calculate(current_project)
+            st.session_state.last_result = (total, df_sum, df_subitem, df_detail)
             
-        _, df_sum, df_detail = st.session_state.last_result
+        _, df_sum, _, df_detail = st.session_state.last_result
         color_palette = ['#4E79A7', '#F28E2B', '#E15759', '#76B7B2', '#59A14F', '#EDC948', '#B07AA1']
         
         st.markdown("#### 🔹 隧道整体指标分析")
@@ -874,8 +906,8 @@ def main():
         ax3.spines['top'].set_visible(False); ax3.spines['right'].set_visible(False)
         ax3.grid(axis='y', linestyle='--', alpha=0.6)
 
-        df_subitem = df_detail.groupby('分项工程')['检验批编号'].count().sort_values(ascending=True)
-        df_subitem_top = df_subitem.tail(10)
+        df_subitem_chart = df_detail.groupby('分项工程')['检验批编号'].count().sort_values(ascending=True)
+        df_subitem_top = df_subitem_chart.tail(10)
         bars4 = ax4.barh(df_subitem_top.index, df_subitem_top.values, color='#2ecc71', height=0.6)
         ax4.set_title("分项工程验收频次排行 (TOP 10)", pad=20, fontsize=14, fontweight='bold')
         for bar in bars4:
@@ -889,8 +921,10 @@ def main():
     # ===== 页面：标准查阅 =====
     elif page == "📖 标准查阅":
         st.markdown("<h2>📖 铁路隧道工程施工质量验收标准查阅</h2>", unsafe_allow_html=True)
+        st.info("💡 系统已全面内置《TB 10417-2018》正文（第1至15章）、附录A~F 以及 条文说明。提供三种查阅方式：全文在线阅读、全局关键字检索、PDF原生电子书阅览。")
         
         tab1, tab2, tab3 = st.tabs(["📚 全文在线阅读", "🔍 全局智能检索", "📄 原版 PDF 阅览"])
+        
         full_text_dict = get_tb10417_full_text()
         
         with tab1:
@@ -915,14 +949,12 @@ def main():
                 if not found:
                     st.warning(f"未在内置标准库中检索到包含“{search_query}”的条款。")
                 
-        # --- 核心修复：Blob URL 防拦截 PDF 注入方案 ---
         with tab3:
             st.write("📖 **原版 PDF 在线阅览** (支持缩放、打印、目录跳转)")
             
             pdf_file_path = "TB10417-2018.pdf" 
             
             def render_pdf(pdf_bytes, filename):
-                # 蓝色下载按钮（双重保险）
                 st.download_button(
                     label=f"📥 浏览器如果拦截了预览画面，请点击此处直接下载原版 PDF",
                     data=pdf_bytes,
@@ -930,10 +962,8 @@ def main():
                     mime="application/pdf"
                 )
                 
-                # Base64 编码
                 base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
                 
-                # 注入强效防拦截的 JS Blob 脚本
                 pdf_html = f"""
                 <!DOCTYPE html>
                 <html>
@@ -966,7 +996,6 @@ def main():
                 </body>
                 </html>
                 """
-                # 使用 components.html 渲染，高度拉大到 850px 铺满屏幕
                 components.html(pdf_html, height=850)
 
             if os.path.exists(pdf_file_path):
