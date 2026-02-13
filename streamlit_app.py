@@ -10,10 +10,11 @@ import json
 import base64
 import os
 from datetime import datetime
+import streamlit.components.v1 as components  # 新增：引入组件库以执行防拦截 JS
 
 # --- 1. 页面与样式配置 ---
 st.set_page_config(
-    page_title="隧道工程检验批划分系统 Pro v12.1",
+    page_title="隧道工程检验批划分系统 Pro v12.2",
     page_icon="🚇",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -451,7 +452,7 @@ def draw_enhanced_profile(segments: List[TunnelSegment], tunnel_name: str, direc
     plt.tight_layout()
     return fig
 
-# --- 6. 终极精准计算器 (含规范条文赋码) ---
+# --- 6. 终极精准计算器 ---
 
 class InspectionCalculator:
     DIVISIONS = {
@@ -792,7 +793,6 @@ def main():
     # ===== 页面：检验批计算 (自动静默计算) =====
     elif page == "📊 检验批计算":
         st.markdown(f"<h2>📊 检验批计算 - {current_project.name}</h2>", unsafe_allow_html=True)
-        st.info("📌 **最新验收标准适用说明**：导向墙及衬砌均按【模板、钢筋、混凝土】精确拆分；**明细表已包含规范的主控与一般项目条文号！**")
         
         with st.spinner("🚀 正在自动执行全线智能扫描与精准计算，请稍候..."):
             calc = InspectionCalculator()
@@ -889,20 +889,16 @@ def main():
     # ===== 页面：标准查阅 =====
     elif page == "📖 标准查阅":
         st.markdown("<h2>📖 铁路隧道工程施工质量验收标准查阅</h2>", unsafe_allow_html=True)
-        st.info("💡 系统已全面内置《TB 10417-2018》正文（第1至15章）、附录A~F 以及 条文说明。提供三种查阅方式：全文在线阅读、全局关键字检索、PDF原生电子书阅览。")
         
         tab1, tab2, tab3 = st.tabs(["📚 全文在线阅读", "🔍 全局智能检索", "📄 原版 PDF 阅览"])
-        
         full_text_dict = get_tb10417_full_text()
         
-        # --- Tab 1: 全文在线阅读 ---
         with tab1:
             col_sel, _ = st.columns([1, 2])
             with col_sel:
                 selected_chapter = st.selectbox("📌 选择章节快速跳转:", list(full_text_dict.keys()))
             st.markdown(f"<div class='standard-text'>{full_text_dict[selected_chapter]}</div>", unsafe_allow_html=True)
             
-        # --- Tab 2: 全局智能检索 ---
         with tab2:
             search_query = st.text_input("🔍 输入检索词 (如: 超挖, 喷射混凝土, 附录B, 回填注浆)", "")
             if search_query:
@@ -911,38 +907,77 @@ def main():
                     if search_query in content:
                         found = True
                         st.markdown(f"#### 📍 【{chapter}】")
-                        # 简单高亮处理
                         highlighted_content = content.replace(search_query, f"<span class='highlight'>{search_query}</span>")
-                        # 只显示包含搜索词的段落
                         paragraphs = highlighted_content.split('\n')
                         for p in paragraphs:
                             if f"<span class='highlight'>{search_query}</span>" in p:
                                 st.markdown(f"<div class='standard-text' style='margin-bottom: 10px; padding: 15px;'>{p}</div>", unsafe_allow_html=True)
                 if not found:
                     st.warning(f"未在内置标准库中检索到包含“{search_query}”的条款。")
-            else:
-                st.caption("👈 在上方输入框输入关键词，即可在全本标准中进行秒级内容定位。")
                 
-        # --- Tab 3: 原版 PDF 阅览 ---
+        # --- 核心修复：Blob URL 防拦截 PDF 注入方案 ---
         with tab3:
             st.write("📖 **原版 PDF 在线阅览** (支持缩放、打印、目录跳转)")
             
-            # --- 核心更新：静默读取内置的 PDF 文件 ---
             pdf_file_path = "TB10417-2018.pdf" 
             
+            def render_pdf(pdf_bytes, filename):
+                # 蓝色下载按钮（双重保险）
+                st.download_button(
+                    label=f"📥 浏览器如果拦截了预览画面，请点击此处直接下载原版 PDF",
+                    data=pdf_bytes,
+                    file_name=filename,
+                    mime="application/pdf"
+                )
+                
+                # Base64 编码
+                base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                
+                # 注入强效防拦截的 JS Blob 脚本
+                pdf_html = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        body {{ margin: 0; padding: 0; overflow: hidden; }}
+                        iframe {{ width: 100vw; height: 100vh; border: none; }}
+                    </style>
+                </head>
+                <body>
+                    <iframe id="pdf-frame"></iframe>
+                    <script>
+                        const b64Data = '{base64_pdf}';
+                        const byteCharacters = atob(b64Data);
+                        const byteArrays = [];
+                        const sliceSize = 512;
+                        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {{
+                            const slice = byteCharacters.slice(offset, offset + sliceSize);
+                            const byteNumbers = new Array(slice.length);
+                            for (let i = 0; i < slice.length; i++) {{
+                                byteNumbers[i] = slice.charCodeAt(i);
+                            }}
+                            const byteArray = new Uint8Array(byteNumbers);
+                            byteArrays.push(byteArray);
+                        }}
+                        const blob = new Blob(byteArrays, {{type: 'application/pdf'}});
+                        const blobUrl = URL.createObjectURL(blob);
+                        document.getElementById('pdf-frame').src = blobUrl;
+                    </script>
+                </body>
+                </html>
+                """
+                # 使用 components.html 渲染，高度拉大到 850px 铺满屏幕
+                components.html(pdf_html, height=850)
+
             if os.path.exists(pdf_file_path):
                 with open(pdf_file_path, "rb") as f:
-                    base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="850" type="application/pdf"></iframe>'
-                st.markdown(pdf_display, unsafe_allow_html=True)
+                    render_pdf(f.read(), "TB10417-2018铁路隧道工程施工质量验收标准.pdf")
             else:
                 st.warning(f"⚠️ 系统未能找到内置的 PDF 文件 `{pdf_file_path}`。")
-                st.info("💡 提示：请将您的规范 PDF 重命名为 `TB10417-2018.pdf` 并上传到 GitHub 仓库（与 `streamlit_app.py` 放在同一层级目录）。在文件上传并重启服务器之前，您仍可在此处手动选择文件进行查看：")
+                st.info("💡 提示：请将您的规范 PDF 重命名为 `TB10417-2018.pdf` 并上传到 GitHub 仓库（与 `streamlit_app.py` 放在同一目录）。在文件上传并重启服务器之前，您仍可在此处手动选择文件进行查看：")
                 uploaded_pdf = st.file_uploader("📥 手动上传规范原版 PDF", type=['pdf'])
                 if uploaded_pdf is not None:
-                    base64_pdf = base64.b64encode(uploaded_pdf.read()).decode('utf-8')
-                    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="850" type="application/pdf"></iframe>'
-                    st.markdown(pdf_display, unsafe_allow_html=True)
+                    render_pdf(uploaded_pdf.read(), "TB10417-2018.pdf")
 
 if __name__ == "__main__":
     main()
