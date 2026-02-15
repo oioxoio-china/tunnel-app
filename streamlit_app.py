@@ -1,4 +1,4 @@
-import streamlit as st
+﻿import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -471,7 +471,7 @@ class InspectionCalculator:
     def _generate_batch_code(self, tunnel_id: str, div_code: str, item_code: str, seq: int) -> str:
         return f"{tunnel_id}-{div_code}-{item_code}-{seq:03d}"
 
-    def _add_batch(self, results, tunnel_name, tunnel_id, d, i, seq, remark, start=0, end=0):
+    def _add_batch(self, results, tunnel_name, tunnel_id, d, i, seq, remark, start=0, end=0, cycle_num=""):
         mileage_str = "K0+000" if start==0 and end==0 else f"{format_mileage(start)}~{format_mileage(end)}"
         length = 0.0 if start==0 and end==0 else abs(end - start)
         
@@ -481,6 +481,7 @@ class InspectionCalculator:
             '分部工程': self.DIVISIONS[d]['name'],
             '分项工程': self.DIVISIONS[d]['items'][i]['name'],
             '具体部位': remark, '里程范围': mileage_str, '长度': round(length, 3),
+            '循环数': cycle_num,
             '主控项目条文': self.DIVISIONS[d]['items'][i]['main'],
             '一般项目条文': self.DIVISIONS[d]['items'][i]['gen'],
             '备注': remark
@@ -502,13 +503,17 @@ class InspectionCalculator:
         tj_cycles = 0
         for seg in tunnel.segments:
             if seg.method not in ['CD法', '台阶法']: continue
-            cycles = int(seg.length / seg.advance_per_cycle) if seg.advance_per_cycle > 0 else 0
+            cycles = math.ceil(seg.length / seg.advance_per_cycle) if seg.advance_per_cycle > 0 else 0
             if seg.method == 'CD法': cd_cycles += cycles
             else: tj_cycles += cycles
         total_cycles = cd_cycles + tj_cycles
         rings = math.ceil(tunnel.total_length / tunnel.trolley_length) if tunnel.trolley_length > 0 else 0
 
-        # 1. 洞口 & 超前
+        # 1. 加固处理 - 危岩处治
+        self._add_batch(results, tunnel.name, tunnel.id, '01', '01', 1, '进洞口-危岩处治')
+        self._add_batch(results, tunnel.name, tunnel.id, '01', '01', 2, '出洞口-危岩处治')
+
+        # 2. 洞口 & 超前
         for d, i_codes in [('02', ['01','04']), ('03', ['01','02','03'])]:
             for ic in i_codes:
                 self._add_batch(results, tunnel.name, tunnel.id, d, ic, 1, '进洞口')
@@ -523,24 +528,36 @@ class InspectionCalculator:
             self._add_batch(results, tunnel.name, tunnel.id, '02', '03', idx+4, f'出洞口-{sub_item}')
 
         # 2. 开挖 & 初支
+        # 每个CD法/台阶法段落从自己的实际起始里程开始，确保里程正确
+        seq_counter = 1  # 全局序号累加器
+        
         for seg in tunnel.segments:
             if seg.method not in ['CD法', '台阶法']: continue
-            cycles = int(seg.length / seg.advance_per_cycle) if seg.advance_per_cycle > 0 else 0
+            
+            cycles = math.ceil(seg.length / seg.advance_per_cycle) if seg.advance_per_cycle > 0 else 0
             
             ic_exc = '01' if seg.method == 'CD法' else '02'
             step_names = ['左上','右上','左下','右下'] if seg.method == 'CD法' else ['上台阶','下台阶']
             
-            base_start = min(seg.start_mileage, seg.end_mileage) if dir_sign == 1 else max(seg.start_mileage, seg.end_mileage)
+            # 使用段落自己的起始和结束里程
+            seg_start = min(seg.start_mileage, seg.end_mileage) if dir_sign == 1 else max(seg.start_mileage, seg.end_mileage)
+            seg_end = max(seg.start_mileage, seg.end_mileage) if dir_sign == 1 else min(seg.start_mileage, seg.end_mileage)
             
             for c in range(cycles):
-                start = base_start + c * seg.advance_per_cycle * dir_sign
+                start = seg_start + c * seg.advance_per_cycle * dir_sign
                 end = start + seg.advance_per_cycle * dir_sign
+                # 最后一个循环的结束里程不能超过段落实际结束里程
+                if dir_sign == 1:
+                    end = min(end, seg_end)
+                else:
+                    end = max(end, seg_end)
                 
                 for s_idx, s_name in enumerate(step_names):
-                    seq = c * seg.steps + s_idx + 1
-                    self._add_batch(results, tunnel.name, tunnel.id, '04', ic_exc, seq, f"{seg.name}-{s_name}", start, end)
+                    seq = seq_counter
+                    seq_counter += 1
+                    self._add_batch(results, tunnel.name, tunnel.id, '04', ic_exc, seq, f"{seg.name}-{s_name}", start, end, c+1)
                     for ic_sup in ['01','02','03','04']:
-                        self._add_batch(results, tunnel.name, tunnel.id, '05', ic_sup, seq, f"{seg.name}-{s_name}", start, end)
+                        self._add_batch(results, tunnel.name, tunnel.id, '05', ic_sup, seq, f"{seg.name}-{s_name}", start, end, c+1)
 
         # 3. 衬砌/防排水/附属
         if tunnel.trolley_length > 0:
@@ -554,11 +571,11 @@ class InspectionCalculator:
                 
                 for idx, sub_item in enumerate(['模板', '钢筋', '混凝土']):
                     seq = r * 3 + idx + 1
-                    self._add_batch(results, tunnel.name, tunnel.id, '06', '01', seq, f'仰拱-{sub_item}', start, end)
-                    self._add_batch(results, tunnel.name, tunnel.id, '06', '02', seq, f'拱墙-{sub_item}', start, end)
+                    self._add_batch(results, tunnel.name, tunnel.id, '06', '01', seq, f'仰拱-{sub_item}', start, end, r+1)
+                    self._add_batch(results, tunnel.name, tunnel.id, '06', '02', seq, f'拱墙-{sub_item}', start, end, r+1)
                 
-                for ic in ['01','02','03']: self._add_batch(results, tunnel.name, tunnel.id, '07', ic, r+1, '防排水', start, end)
-                for ic in ['01','02','03','04']: self._add_batch(results, tunnel.name, tunnel.id, '08', ic, r+1, '附属', start, end)
+                for ic in ['01','02','03']: self._add_batch(results, tunnel.name, tunnel.id, '07', ic, r+1, '防排水', start, end, r+1)
+                for ic in ['01','02','03','04']: self._add_batch(results, tunnel.name, tunnel.id, '08', ic, r+1, '附属', start, end, r+1)
 
         # 提取分部分项高级汇总 (含计算基数与公式)
         total = 0
@@ -847,13 +864,87 @@ def main():
             lining_val = df_sum["06 衬砌工程"].sum() if "06 衬砌工程" in df_sum else 0
             st.markdown(f'<div class="metric-card bg-orange"><div class="metric-title">二衬工程</div><div class="metric-value">{lining_val:,}</div></div>', unsafe_allow_html=True)
 
+        # 生成隧道段落统计表（按分部统计检验批数量）
+        segment_stats = []
+        for tunnel in current_project.tunnels:
+            for seg in tunnel.segments:
+                # 计算循环数/环数
+                if seg.method in ['CD法', '台阶法']:
+                    cycles = math.ceil(seg.length / seg.advance_per_cycle) if seg.advance_per_cycle > 0 else 0
+                    steps = 4 if seg.method == 'CD法' else 2
+                elif seg.method == '明挖':
+                    cycles = 1
+                    steps = 1
+                else:
+                    cycles = 0
+                    steps = 0
+                
+                # 按分部计算检验批数量
+                if seg.method in ['CD法', '台阶法']:
+                    # 04 洞身开挖: 循环数 × 步数 (每步1批)
+                    div_04 = cycles * steps
+                    # 05 初期支护: 循环数 × 步数 × 4项 (锚杆/钢架/钢筋网/喷射混凝土)
+                    div_05 = cycles * steps * 4
+                else:
+                    div_04 = 0
+                    div_05 = 0
+                
+                total_batches = div_04 + div_05
+                
+                # 生成计算说明
+                if seg.method == 'CD法':
+                    formula = f"{cycles}循环×4步×1批={div_04}批 | {cycles}循环×4步×4项={div_05}批"
+                elif seg.method == '台阶法':
+                    formula = f"{cycles}循环×2步×1批={div_04}批 | {cycles}循环×2步×4项={div_05}批"
+                else:
+                    formula = "-"
+                
+                segment_stats.append({
+                    '隧道': tunnel.name,
+                    '部位名称': seg.name,
+                    '施工工法': seg.method,
+                    '段落长度(m)': round(seg.length, 3),
+                    '起点里程': format_mileage(min(seg.start_mileage, seg.end_mileage)),
+                    '终点里程': format_mileage(max(seg.start_mileage, seg.end_mileage)),
+                    '进尺(m)': seg.advance_per_cycle,
+                    '循环数': cycles if seg.method in ['CD法', '台阶法'] else '-',
+                    '04洞身开挖': div_04,
+                    '05初期支护': div_05,
+                    '检验批总数': total_batches,
+                    '计算说明': formula
+                })
+        
+        df_segments = pd.DataFrame(segment_stats)
+
         st.markdown("### 1. 分部工程汇总表")
         st.dataframe(df_sum, use_container_width=True)
         
-        st.markdown("### 2. 分部分项汇总表 (带基数与计算说明)")
+        st.markdown("### 2. 隧道段落统计表")
+        st.dataframe(df_segments, use_container_width=True)
+        
+        # 段落统计汇总
+        seg_summary = []
+        for tunnel in current_project.tunnels:
+            tunnel_segs = [s for s in tunnel.segments]
+            cd_count = sum(1 for s in tunnel_segs if s.method == 'CD法')
+            tj_count = sum(1 for s in tunnel_segs if s.method == '台阶法')
+            mc_count = sum(1 for s in tunnel_segs if s.method == '明挖')
+            total_len = sum(s.length for s in tunnel_segs)
+            seg_summary.append({
+                '隧道': tunnel.name,
+                '总段落数': len(tunnel_segs),
+                'CD法段': cd_count,
+                '台阶法段': tj_count,
+                '明挖段': mc_count,
+                '总长度(m)': round(total_len, 3)
+            })
+        df_seg_summary = pd.DataFrame(seg_summary)
+        st.dataframe(df_seg_summary, use_container_width=True)
+        
+        st.markdown("### 3. 分部分项汇总表 (带基数与计算说明)")
         st.dataframe(df_subitem, use_container_width=True)
         
-        st.markdown("### 3. 数据导出区")
+        st.markdown("### 4. 数据导出区")
         c_d1, c_d2, c_d3 = st.columns(3)
         with c_d1: st.download_button("📥 导出【分部汇总表】", df_sum.to_csv(index=False, float_format='%.3f').encode('utf-8-sig'), f"{current_project.name}_分部汇总.csv", "text/csv", use_container_width=True)
         with c_d2: st.download_button("📥 导出【分部分项汇总表】", df_subitem.to_csv(index=False).encode('utf-8-sig'), f"{current_project.name}_分部分项汇总(带公式).csv", "text/csv", use_container_width=True)
@@ -1010,3 +1101,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
