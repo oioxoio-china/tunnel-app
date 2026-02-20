@@ -1,3 +1,14 @@
-streamlit
-pandas
-matplotlib
+# 隧道工程检验批划分系统 Pro v15.0 依赖包
+# 安装命令: pip install -r requirements.txt
+
+streamlit>=1.28.0
+pandas>=1.5.0
+numpy>=1.21.0
+matplotlib>=3.5.0
+
+# 可选包 - 用于交互式图表
+plotly>=5.10.0
+
+# 可选包 - 用于PDF处理
+# pypdf>=3.0.0
+# pdfplumber>=0.9.0
