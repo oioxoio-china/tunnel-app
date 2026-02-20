@@ -1,14 +1,24 @@
 # 隧道工程检验批划分系统 Pro v15.0 依赖包
 # 安装命令: pip install -r requirements.txt
 
+# ===== 核心依赖 =====
 streamlit>=1.28.0
 pandas>=1.5.0
 numpy>=1.21.0
 matplotlib>=3.5.0
 
-# 可选包 - 用于交互式图表
+# ===== 可选：交互式图表 =====
 plotly>=5.10.0
 
-# 可选包 - 用于PDF处理
+# ===== 可选：PDF处理 =====
 # pypdf>=3.0.0
 # pdfplumber>=0.9.0
+
+# ===== Windows字体支持（解决Matplotlib中文乱码）=====
+# 如果在服务器上运行，需要安装中文字体
+# Windows: 确保系统已安装 SimHei, SimSun, Microsoft YaHei 等中文字体
+# Linux服务器参考安装:
+#   sudo apt-get update
+#   sudo apt-get install -y fonts-wqy-microhei fonts-wqy-zenhei fonts-noto-cjk
+# 
+# 或者在项目目录中添加中文字体文件，并在代码中指定字体路径
