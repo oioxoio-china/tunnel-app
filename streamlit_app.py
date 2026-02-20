@@ -1217,19 +1217,19 @@ def main():
         
         # 1. 隧道工法纵断面图
         st.markdown("##### 1. 隧道工法纵断面图")
-        tab1, tab2 = st.tabs(["📊 Matplotlib版本", "🎨 Plotly交互版"])
+        tab1, tab2 = st.tabs(["🎨 Plotly交互版", "📊 Matplotlib版本"])
         with tab1:
-            fig = draw_enhanced_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
-            if fig:
-                st.pyplot(fig)
-                plt.close(fig)  # 显示后释放内存
+            plotly_fig = render_plotly_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
+            if plotly_fig:
+                st.plotly_chart(plotly_fig, use_container_width=True)
             else:
                 st.info("暂无段落数据")
         
         with tab2:
-            plotly_fig = render_plotly_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
-            if plotly_fig:
-                st.plotly_chart(plotly_fig, use_container_width=True)
+            fig = draw_enhanced_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
+            if fig:
+                st.pyplot(fig)
+                plt.close(fig)  # 显示后释放内存
             else:
                 st.info("暂无段落数据")
         
