@@ -70,19 +70,19 @@ st.markdown("""
 import matplotlib
 import matplotlib.font_manager as fm
 
-# 查找系统中可用的中文字体
+# 查找系统中可用的中文字体 (与原始版本一致)
 chinese_fonts = []
 for font in fm.fontManager.ttflist:
-    if 'simhei' in font.name.lower() or 'simsun' in font.name.lower() or 'microsoft yahei' in font.name.lower() or 'simkai' in font.name.lower() or 'simfang' in font.name.lower():
+    if 'simhei' in font.name.lower() or 'simsun' in font.name.lower() or 'microsoft yahei' in font.name.lower() or 'simkai' in font.name.lower() or 'simfang' in font.name.lower() or 'wenquanyi' in font.name.lower():
         chinese_fonts.append(font.name)
 
-# 添加更多常见中文字体
-all_fonts = ['SimHei', 'SimSun', 'Microsoft YaHei', 'KaiTi', 'FangSong', 'Arial Unicode MS', 'DejaVu Sans']
+# 添加更多常见中文字体 (与原始版本一致)
+all_fonts = ['WenQuanYi Zen Hei', 'SimHei', 'SimSun', 'Microsoft YaHei', 'KaiTi', 'FangSong', 'Arial Unicode MS', 'DejaVu Sans']
 
 # 优先使用找到的中文字体
 font_list = chinese_fonts + [f for f in all_fonts if f not in chinese_fonts]
 
-# 设置字体
+# 设置字体 (与原始版本一致)
 plt.rcParams['font.sans-serif'] = font_list
 plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
@@ -483,45 +483,18 @@ def create_demo_project() -> Project:
 # 5. 可视化图表 (Plotly升级版 + Matplotlib内存修复)
 # =============================================================================
 def draw_enhanced_profile(segments: List[TunnelSegment], tunnel_name: str, direction: str):
-    """绘制隧道纵断面图 - 优化内存 + 中文字体"""
+    """绘制隧道纵断面图 - 参考原始版本，依赖全局字体设置"""
     if not segments:
         return None
-    
-    # 设置中文字体 - 增强版
-    import matplotlib
-    import matplotlib.font_manager as fm
-    
-    # 优先尝试多种中文字体
-    font_candidates = ['SimHei', 'SimSun', 'Microsoft YaHei', 'Microsoft YaHei UI', 
-                       'KaiTi', 'FangSong', 'Arial Unicode MS', 'Noto Sans CJK SC']
-    font_prop = None
-    
-    # 方案1: 使用系统字体管理器查找
-    for font_name in font_candidates:
-        try:
-            font_path = fm.findfont(fm.FontProperties(font_name))
-            if font_path and 'not a valid font' not in font_path.lower():
-                font_prop = fm.FontProperties(fname=font_path)
-                break
-        except:
-            continue
-    
-    # 方案2: 直接遍历字体列表
-    if font_prop is None:
-        for font in fm.fontManager.ttflist:
-            if any(cf in font.name.lower() for cf in ['simhei', 'simsun', 'microsoft yahei', 'kaiti', 'fangsong']):
-                font_prop = fm.FontProperties(fname=font.fname)
-                break
     
     min_m = min(min(s.start_mileage, s.end_mileage) for s in segments)
     max_m = max(max(s.start_mileage, s.end_mileage) for s in segments)
     total_len = max_m - min_m
+    
     if total_len <= 0:
         return None
     
     colors = {'明挖': '#FF6B6B', 'CD法': '#4ECDC4', '台阶法': '#45B7D1', '洞口': '#96CEB4'}
-    
-    # 创建新图形
     fig, ax = plt.subplots(figsize=(12, 4.5), dpi=100)
     ax.set_facecolor('#F9F9F9')
     
@@ -529,50 +502,32 @@ def draw_enhanced_profile(segments: List[TunnelSegment], tunnel_name: str, direc
         l = abs(seg.end_mileage - seg.start_mileage)
         if l <= 0:
             continue
+        
         start_x = min(seg.start_mileage, seg.end_mileage)
         c = colors.get(seg.method, '#D3D3D3')
         rect = patches.Rectangle((start_x, 4), l, 2, linewidth=0.5, edgecolor='white', facecolor=c)
         ax.add_patch(rect)
+        
         if l > total_len * 0.05:
-            if font_prop:
-                ax.text(start_x + l/2, 5, f"{l:.1f}m", ha='center', va='center', color='white', fontweight='bold', fontsize=9, fontproperties=font_prop)
-            else:
-                ax.text(start_x + l/2, 5, f"{l:.1f}m", ha='center', va='center', color='white', fontweight='bold', fontsize=9)
+            ax.text(start_x + l/2, 5, f"{l:.1f}m", ha='center', va='center', color='white', fontweight='bold', fontsize=9)
+            ax.text(start_x + l/2, 6.2, f"{seg.name}\n({seg.method})", ha='center', va='bottom', fontsize=8, color='#333')
     
     ax.set_xlim(min_m - 50, max_m + 50)
     ax.set_ylim(0, 10)
     ax.axis('off')
     
-    # 方向箭头
     arrow_x, arrow_dx = (min_m, max_m - min_m) if direction == "正向" else (max_m, -(max_m - min_m))
     ax.arrow(arrow_x, 3.5, arrow_dx, 0, head_width=0.3, head_length=20, fc='#333', ec='#333', length_includes_head=True)
     
-    # 里程标注 - 使用FontProperties
-    if font_prop:
-        ax.text(min_m, 2.5, format_mileage(min_m), ha='center', fontsize=9, fontweight='bold', fontproperties=font_prop)
-        ax.text(max_m, 2.5, format_mileage(max_m), ha='center', fontsize=9, fontweight='bold', fontproperties=font_prop)
-        ax.text((min_m+max_m)/2, 2.5, f"掘进方向: {direction}", ha='center', fontsize=10, color='red', fontweight='bold', fontproperties=font_prop)
-    else:
-        ax.text(min_m, 2.5, format_mileage(min_m), ha='center', fontsize=9, fontweight='bold')
-        ax.text(max_m, 2.5, format_mileage(max_m), ha='center', fontsize=9, fontweight='bold')
-        ax.text((min_m+max_m)/2, 2.5, f"掘进方向: {direction}", ha='center', fontsize=10, color='red', fontweight='bold')
+    ax.text(min_m, 2.5, format_mileage(min_m), ha='center', fontsize=9, fontweight='bold')
+    ax.text(max_m, 2.5, format_mileage(max_m), ha='center', fontsize=9, fontweight='bold')
+    ax.text((min_m+max_m)/2, 2.5, f"掘进方向: {direction}", ha='center', fontsize=10, color='red', fontweight='bold')
     
-    # 图例 - 使用FontProperties
     legs = [patches.Patch(color=c, label=l) for l,c in colors.items()]
-    if font_prop:
-        ax.legend(handles=legs, loc='upper right', fontsize='small', frameon=False, ncol=4, prop=font_prop)
-    else:
-        ax.legend(handles=legs, loc='upper right', fontsize='small', frameon=False, ncol=4)
-    
-    # 标题 - 使用FontProperties
-    if font_prop:
-        ax.set_title(f"{tunnel_name} 施工工法纵断面图", fontsize=16, fontweight='bold', pad=20, fontproperties=font_prop)
-    else:
-        ax.set_title(f"{tunnel_name} 施工工法纵断面图", fontsize=16, fontweight='bold', pad=20)
+    ax.legend(handles=legs, loc='upper right', fontsize='small', frameon=False, ncol=4)
+    ax.set_title(f"{tunnel_name} 施工工法纵断面图", fontsize=16, fontweight='bold', pad=20)
     
     plt.tight_layout()
-    
-    # 注意：不要在这里关闭图形！让Streamlit负责显示和清理
     return fig
 
 # =============================================================================
@@ -1217,19 +1172,20 @@ def main():
         
         # 1. 隧道工法纵断面图
         st.markdown("##### 1. 隧道工法纵断面图")
-        tab1, tab2 = st.tabs(["🎨 Plotly交互版", "📊 Matplotlib版本"])
+        tab1, tab2 = st.tabs(["📊 Matplotlib版本", "🎨 Plotly交互版"])
+        
         with tab1:
-            plotly_fig = render_plotly_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
-            if plotly_fig:
-                st.plotly_chart(plotly_fig, use_container_width=True)
+            fig = draw_enhanced_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
+            if fig:
+                st.pyplot(fig)
+                plt.close(fig)
             else:
                 st.info("暂无段落数据")
         
         with tab2:
-            fig = draw_enhanced_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
-            if fig:
-                st.pyplot(fig)
-                plt.close(fig)  # 显示后释放内存
+            plotly_fig = render_plotly_profile(target_tunnel.segments, target_tunnel.name, target_tunnel.direction)
+            if plotly_fig:
+                st.plotly_chart(plotly_fig, use_container_width=True)
             else:
                 st.info("暂无段落数据")
         
