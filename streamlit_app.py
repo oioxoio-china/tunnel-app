@@ -312,7 +312,7 @@ def _generate_subitem_summary(results, tunnel: Tunnel, cd_cycles: int, tj_cycles
             if count == 0: continue
             name, rule = i_data['name'], div_config[d_code]['items'][i_code]['formula']
             calc_base = "-"
-            if '洞口' in rule: calc_base = "2 个洞口"; calc_str = f"{calc_base} × 3 批/洞口 = {count} 批" if '3批' in rule else f"{calc_base} × 1 批/洞口 = {count} 批"
+            if '洞口' in rule: calc_base = "2 个洞口"; calc_str = f"{calc_base} × 1 批/洞口 = {count} 批"
             elif 'CD法' in name: calc_base = f"{cd_cycles} 循环"; calc_str = f"{calc_base} × 4 步/循环 = {count} 批"
             elif '台阶法' in name: calc_base = f"{tj_cycles} 循环"; calc_str = f"{calc_base} × 2 步/循环 = {count} 批"
             elif '循环' in rule: calc_base = f"{total_cycles} 循环"; calc_str = f"{calc_base} × 4 批/循环 = {count} 批"
