@@ -29,8 +29,8 @@ import streamlit.components.v1 as components
 # [核心引入] 导入外部静态配置，为代码大幅瘦身
 # =============================================================================
 try:
-    from standards_text import TB10417_TEXT, JTG_F80_1_TEXT
-    from default_config import RAILWAY_DIVISIONS, HIGHWAY_DIVISIONS, ZK_DATA, YK_DATA, AK_DATA, BK_DATA, HTD_DATA
+    from standards_text import TB10417_TEXT, JTG_F80_1_TEXT, TB10753_TEXT
+    from default_config import RAILWAY_DIVISIONS, HIGHWAY_DIVISIONS, HIGH_SPEED_RAILWAY_DIVISIONS, ZK_DATA, YK_DATA, AK_DATA, BK_DATA, HTD_DATA
 except ImportError:
     st.error("⚠️ 缺失依赖文件！请确保当前目录下存在 `standards_text.py` 和 `default_config.py` 文件。")
     st.stop()
@@ -65,12 +65,68 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 中文字体修复
+# 中文字体修复 - 更全面的字体支持
 import matplotlib.font_manager as fm
-chinese_fonts = [font.name for font in fm.fontManager.ttflist if any(name in font.name.lower() for name in ['simhei', 'simsun', 'microsoft yahei'])]
-all_fonts = ['WenQuanYi Zen Hei', 'SimHei', 'Microsoft YaHei', 'SimSun', 'Arial Unicode MS']
-plt.rcParams['font.sans-serif'] = chinese_fonts + [f for f in all_fonts if f not in chinese_fonts]
+import matplotlib as mpl
+import os
+import warnings
+warnings.filterwarnings('ignore')
+
+# 尝试从系统字体目录获取更多中文字体
+try:
+    font_paths = [
+        r'C:\Windows\Fonts',  # Windows
+        r'/usr/share/fonts',   # Linux
+        r'/System/Library/Fonts',  # macOS
+    ]
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            for f in os.listdir(font_path):
+                if f.endswith(('.ttf', '.otf')):
+                    try:
+                        fm.fontManager.addfont(os.path.join(font_path, f))
+                    except:
+                        pass
+except:
+    pass
+
+# 获取所有可用中文字体
+chinese_fonts = []
+for font in fm.fontManager.ttflist:
+    font_name = font.name.lower()
+    # 检查多种中文字体名称
+    if any(name in font_name for name in ['simHei', 'SimHei', 'simsun', 'SimSun', 'Microsoft YaHei', 'microsoft yahei', 
+                                           'wenquanyi', 'WenQuanYi', 'noto sans cjk', 'noto sans sc', 
+                                           'droid sans fallback', 'source han sans', 'pingFang', 'STHeiti',
+                                           'FangSong', 'KaiTi', 'YouYuan', 'YuWei', 'Ma Shan Zheng']):
+        chinese_fonts.append(font.name)
+
+# 去重并保持顺序
+chinese_fonts = list(dict.fromkeys(chinese_fonts))
+
+# 完整的备选字体列表
+all_fonts = [
+    'Microsoft YaHei', 'SimHei', 'SimSun', 'WenQuanYi Zen Hei', 'WenQuanYi Micro Hei',
+    'Arial Unicode MS', 'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Noto Sans SC',
+    'Source Han Sans SC', 'PingFang SC', 'PingFang TC', 'STHeiti', 'STSong',
+    'FangSong', 'FangSong_GB2312', 'KaiTi', 'KaiTi_GB2312', 'YouYuan',
+    'YuWei', 'Ma Shan Zheng', 'SimKai', 'SimFang', 'SimLi'
+]
+
+# 合并可用字体，优先使用找到的中文字体
+available_fonts = chinese_fonts + [f for f in all_fonts if f not in chinese_fonts]
+
+# 设置 matplotlib 字体
+if available_fonts:
+    plt.rcParams['font.sans-serif'] = available_fonts
+    plt.rcParams['font.family'] = 'sans-serif'
+
+# 修复负号显示问题
 plt.rcParams['axes.unicode_minus'] = False
+
+# 打印调试信息（可选）
+# print(f"可用中文字体: {chinese_fonts}")
+# print(f"设置字体: {plt.rcParams['font.sans-serif'][:3]}")
 
 # =============================================================================
 # 1. 数据结构定义
@@ -207,7 +263,10 @@ def render_plotly_dashboard(df_sum: pd.DataFrame, df_detail: pd.DataFrame):
 def _generate_batch_code(tunnel_id: str, div_code: str, item_code: str, seq: int) -> str: return f"{tunnel_id}-{div_code}-{item_code}-{seq:03d}"
 
 def _add_batch(results, tunnel_name, tunnel_id, d, i, seq, remark, start=0, end=0, cycle_num="", div_config=None):
-    if div_config[d]['items'][i]['name'] == '-': return
+    # 安全检查：确保div和item都存在
+    if d not in div_config: return
+    if i not in div_config[d].get('items', {}): return
+    if div_config[d]['items'][i].get('name') == '-': return
     mileage_str = "K0+000" if start==0 and end==0 else f"{format_mileage(start)}~{format_mileage(end)}"
     batch = {
         '检验批编号': _generate_batch_code(tunnel_id, d, i, seq), '隧道': tunnel_name,
@@ -325,7 +384,7 @@ def _generate_subitem_summary(results, tunnel: Tunnel, cd_cycles: int, tj_cycles
     results['summary']['合计'] = total
     return subitem_res
 
-def calculate_single_tunnel(tunnel: Tunnel, base_div_config: dict, is_highway: bool) -> Tuple[Dict, List]:
+def calculate_single_tunnel(tunnel: Tunnel, base_div_config: dict, is_highway: bool, is_high_speed: bool = False) -> Tuple[Dict, List]:
     div_config = copy.deepcopy(base_div_config)
     results = {'tunnel_name': tunnel.name, 'divisions': {}, 'summary': {}, 'all_batches': []}
     for d_code, d_info in div_config.items():
@@ -334,20 +393,21 @@ def calculate_single_tunnel(tunnel: Tunnel, base_div_config: dict, is_highway: b
             results['divisions'][d_code]['items'][i_code] = {'name': i_info['name'], 'batches': [], 'count': 0}
     
     cd_cycles, tj_cycles, total_cycles, rings = _calculate_cycles_and_rings(tunnel)
-    _calculate_portal_batches(results, tunnel, div_config, is_highway)
-    _calculate_excavation_and_support_batches(results, tunnel, cd_cycles, tj_cycles, div_config, is_highway)
-    _calculate_lining_and_auxiliary_batches(results, tunnel, rings, div_config, is_highway)
+    _calculate_portal_batches(results, tunnel, div_config, is_highway or is_high_speed)
+    _calculate_excavation_and_support_batches(results, tunnel, cd_cycles, tj_cycles, div_config, is_highway or is_high_speed)
+    _calculate_lining_and_auxiliary_batches(results, tunnel, rings, div_config, is_highway or is_high_speed)
     subitem_res = _generate_subitem_summary(results, tunnel, cd_cycles, tj_cycles, total_cycles, rings, div_config)
     return results, subitem_res
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def calculate_project_batches(project: Project, standard_type: str) -> Tuple[int, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     is_highway = "公路" in standard_type
-    base_div_config = HIGHWAY_DIVISIONS if is_highway else RAILWAY_DIVISIONS
+    is_high_speed = "高铁" in standard_type
+    base_div_config = HIGHWAY_DIVISIONS if is_highway else (HIGH_SPEED_RAILWAY_DIVISIONS if is_high_speed else RAILWAY_DIVISIONS)
     grand_total = 0; summary_list = []; all_batches_flat = []; subitem_summary_flat = []
     
     for tunnel in project.tunnels:
-        tunnel_res, subitem_res = calculate_single_tunnel(tunnel, base_div_config, is_highway)
+        tunnel_res, subitem_res = calculate_single_tunnel(tunnel, base_div_config, is_highway, is_high_speed)
         sum_dict = {'隧道': tunnel.name}
         sum_dict.update(tunnel_res['summary']); summary_list.append(sum_dict)
         grand_total += tunnel_res['summary']['合计']
@@ -368,7 +428,12 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
 def get_pdf_bytes(standard_type: str) -> Optional[bytes]:
     import sys
     app_dir = os.path.dirname(os.path.abspath(sys.argv[0])) if hasattr(sys, 'argv') else os.getcwd()
-    target_file = "JTG_F80_1-2017.pdf" if "公路" in standard_type else "TB10417-2018.pdf"
+    if "公路" in standard_type:
+        target_file = "JTG_F80_1-2017.pdf"
+    elif "高铁" in standard_type:
+        target_file = "TB10753-2018.pdf"
+    else:
+        target_file = "TB10417-2018.pdf"
     for p in [target_file, os.path.join(app_dir, target_file), os.path.join(os.path.dirname(__file__), target_file)]:
         if os.path.exists(p): return open(p, "rb").read()
     return None
@@ -413,7 +478,7 @@ def main():
         
         st.markdown("---")
         st.markdown('<div class="nav-section"><div class="nav-title">📐 应用规范标准</div>', unsafe_allow_html=True)
-        selected_standard = st.radio("规范", ["铁路隧道 (TB 10417-2018)", "公路隧道 (JTG F80/1-2017)"], index=0 if "铁路" in st.session_state.standard_type else 1, label_visibility="collapsed", key="standard_selector")
+        selected_standard = st.radio("规范", ["铁路隧道 (TB 10417-2018)", "公路隧道 (JTG F80/1-2017)", "高铁隧道 (TB 10753-2018)"], index=0 if "铁路" in st.session_state.standard_type else 1, label_visibility="collapsed", key="standard_selector")
         if selected_standard != st.session_state.standard_type:
             st.session_state.standard_type = selected_standard
             st.session_state.last_result = None
