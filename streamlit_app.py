@@ -1,5 +1,5 @@
 ﻿"""
-隧道工程检验批划分系统 Pro v18.1 (高铁铁路规范对齐版)
+隧道工程检验批划分系统 Pro v18.2 (高铁铁路规范对齐版)
 ==========================================
 优化内容：
 1. 【规范对齐】严格对齐《高铁及铁路隧道工程检验批划分表》PDF规范
@@ -40,7 +40,7 @@ except ImportError:
 # =============================================================================
 # 0. 页面与样式配置
 # =============================================================================
-st.set_page_config(page_title="隧道工程检验批划分系统 Pro v18.1", page_icon="🚇", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="隧道工程检验批划分系统 Pro v18.2", page_icon="🚇", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
