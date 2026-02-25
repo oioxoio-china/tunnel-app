@@ -1,11 +1,13 @@
 ﻿"""
-隧道工程检验批划分系统 Pro v16.9 (极致分项对齐版)
+隧道工程检验批划分系统 Pro v18.1 (高铁铁路规范对齐版)
 ==========================================
 优化内容：
-1. 【完美对齐】公路规范下，2、洞口工程精确输出7个分项；4、洞身衬砌精确输出11个分项，杜绝任何冗余子项！
-2. 架构升级：将庞大的标准文本、默认工程配置剥离至 standards_text.py 和 default_config.py，主代码极度轻量。
-3. 归口逻辑：车行横通道作为独立的单位工程，原汁原味地划入其专属的1-6分部。
-4. 全量恢复：100% 恢复 v15.0 中 Plotly、Matplotlib 的高级美化和交互（阴影、进度条文字、悬停提示等）。
+1. 【规范对齐】严格对齐《高铁及铁路隧道工程检验批划分表》PDF规范
+2. 铁路隧道(TB 10417)：8个分部，36个分项
+3. 高铁隧道(TB 10753)：8个分部，37个分项
+4. 区分超前支护（按"处"）和初期支护（按循环）
+5. 修复GUI列名映射和衬砌计算问题
+6. 修复Streamlit元素重复ID问题
 
 作者: 编码助手
 """
@@ -29,7 +31,7 @@ import streamlit.components.v1 as components
 # [核心引入] 导入外部静态配置，为代码大幅瘦身
 # =============================================================================
 try:
-    from standards_text import TB10417_TEXT, JTG_F80_1_TEXT, TB10753_TEXT
+    from standards_text import TB10417_TEXT, JTG_F80_1_TEXT, TB10753_TEXT, STANDARD_CHARTS, get_standard_key, get_charts_for_chapter
     from default_config import RAILWAY_DIVISIONS, HIGHWAY_DIVISIONS, HIGH_SPEED_RAILWAY_DIVISIONS, ZK_DATA, YK_DATA, AK_DATA, BK_DATA, HTD_DATA
 except ImportError:
     st.error("⚠️ 缺失依赖文件！请确保当前目录下存在 `standards_text.py` 和 `default_config.py` 文件。")
@@ -38,7 +40,7 @@ except ImportError:
 # =============================================================================
 # 0. 页面与样式配置
 # =============================================================================
-st.set_page_config(page_title="隧道工程检验批划分系统 Pro v16.9", page_icon="🚇", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="隧道工程检验批划分系统 Pro v18.1", page_icon="🚇", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -141,6 +143,7 @@ class TunnelSegment:
 class Tunnel:
     id: str; name: str; total_length: float; start_mileage: float; end_mileage: float
     start_label: str; end_label: str; is_main_line: bool; trolley_length: float = 12.0; direction: str = "正向"
+    advance_support_count: int = 2  # 超前支护处数，默认2处
     segments: List[TunnelSegment] = field(default_factory=list)
 
 @dataclass
@@ -192,11 +195,11 @@ def parse_segments_from_raw(raw_data: str, trolley_len: float) -> List[TunnelSeg
 
 @st.cache_data(ttl=3600)
 def create_demo_project() -> Project:
-    t_zk = Tunnel("ZK", "ZK左线", 0, 0, 0, "", "", True, 12.0, "正向", parse_segments_from_raw(ZK_DATA, 12.0))
-    t_yk = Tunnel("YK", "YK右线", 0, 0, 0, "", "", True, 12.0, "正向", parse_segments_from_raw(YK_DATA, 12.0))
-    t_ak = Tunnel("AK", "A匝道", 0, 0, 0, "", "", False, 9.0, "正向", parse_segments_from_raw(AK_DATA, 9.0))
-    t_bk = Tunnel("BK", "B匝道", 0, 0, 0, "", "", False, 9.0, "正向", parse_segments_from_raw(BK_DATA, 9.0))
-    t_htd = Tunnel("HTD1", "1#车行横通道", 0, 0, 0, "", "", False, 9.0, "正向", parse_segments_from_raw(HTD_DATA, 9.0))
+    t_zk = Tunnel("ZK", "ZK左线", 0, 0, 0, "", "", True, 12.0, "正向", 2, parse_segments_from_raw(ZK_DATA, 12.0))
+    t_yk = Tunnel("YK", "YK右线", 0, 0, 0, "", "", True, 12.0, "正向", 2, parse_segments_from_raw(YK_DATA, 12.0))
+    t_ak = Tunnel("AK", "A匝道", 0, 0, 0, "", "", False, 9.0, "正向", 2, parse_segments_from_raw(AK_DATA, 9.0))
+    t_bk = Tunnel("BK", "B匝道", 0, 0, 0, "", "", False, 9.0, "正向", 2, parse_segments_from_raw(BK_DATA, 9.0))
+    t_htd = Tunnel("HTD1", "1#车行横通道", 0, 0, 0, "", "", False, 9.0, "正向", 2, parse_segments_from_raw(HTD_DATA, 9.0))
     for t in [t_zk, t_yk, t_ak, t_bk, t_htd]:
         if t.segments:
             t.start_mileage, t.end_mileage = min(s.start_mileage for s in t.segments), max(s.end_mileage for s in t.segments)
@@ -295,11 +298,12 @@ def _calculate_portal_batches(results, tunnel: Tunnel, div_config: dict, is_high
             for ic in div_config['02']['items'].keys():
                 _add_batch(results, tunnel.name, tunnel.id, '02', ic, 1, '进洞口', div_config=div_config)
                 _add_batch(results, tunnel.name, tunnel.id, '02', ic, 2, '出洞口', div_config=div_config)
-        # 公路规范：超前支护（超前锚杆、超前小导管、管棚）在洞口生成
-        if '03' in div_config:
-            for ic in div_config['03']['items'].keys():
-                _add_batch(results, tunnel.name, tunnel.id, '03', ic, 1, '进洞口', div_config=div_config)
-                _add_batch(results, tunnel.name, tunnel.id, '03', ic, 2, '出洞口', div_config=div_config)
+        # 公路规范：超前支护（超前锚杆、超前小导管、管棚）在洞口生成，属于04洞身衬砌
+        if '04' in div_config:
+            for ic in ['01', '02', '03']:
+                if ic in div_config['04']['items']:
+                    _add_batch(results, tunnel.name, tunnel.id, '04', ic, 1, '进洞口', div_config=div_config)
+                    _add_batch(results, tunnel.name, tunnel.id, '04', ic, 2, '出洞口', div_config=div_config)
     else:
         # 铁路规范：传统逻辑
         for d, i_codes in [('02', ['01','04']), ('03', ['01','02','03'])]:
@@ -319,6 +323,26 @@ def _calculate_portal_batches(results, tunnel: Tunnel, div_config: dict, is_high
 
 def _calculate_excavation_and_support_batches(results, tunnel: Tunnel, cd_cycles: int, tj_cycles: int, div_config: dict, is_highway: bool):
     dir_sign = 1 if tunnel.direction == "正向" else -1; seq_counter = 1
+    
+    # 铁路/高铁：先计算超前支护（按"处"计算，与循环无关）
+    # 超前支护属于04支护分部
+    if not is_highway and '04' in div_config:
+        # 获取超前支护处数（默认2处：进洞口和出洞口）
+        advance_count = getattr(tunnel, 'advance_support_count', 2)
+        # 超前支护的分项代码（管棚、超前小导管、水平旋喷桩、超前预注浆）
+        advance_item_codes = []
+        for ic_key, ic_info in div_config['04']['items'].items():
+            formula = ic_info.get('formula', '')
+            if '每处' in formula:
+                advance_item_codes.append(ic_key)
+        
+        # 超前支护：按"处"计算，每个位置添加一次（添加到04支护分部）
+        if advance_item_codes:
+            for idx in range(advance_count):
+                for ic_adv in advance_item_codes:
+                    location = "进洞口" if idx == 0 else "出洞口" if idx == advance_count - 1 else f"第{idx+1}处"
+                    _add_batch(results, tunnel.name, tunnel.id, '04', ic_adv, idx+1, f"{location}", 0, 0, idx+1, div_config=div_config)
+    
     for seg in tunnel.segments:
         if seg.method not in ['CD法', '台阶法']: continue
         cycles = math.ceil(seg.length / seg.advance_per_cycle) if seg.advance_per_cycle > 0 else 0
@@ -332,10 +356,25 @@ def _calculate_excavation_and_support_batches(results, tunnel: Tunnel, cd_cycles
             else: end = max(end, seg_end)
             for s_idx, s_name in enumerate(step_names):
                 seq = seq_counter; seq_counter += 1
-                if '04' in div_config: _add_batch(results, tunnel.name, tunnel.id, '04', ic_exc, seq, f"{seg.name}-{s_name}", start, end, c+1, div_config=div_config)
-                if '05' in div_config:
-                    for ic_sup in div_config['05']['items'].keys():
-                        _add_batch(results, tunnel.name, tunnel.id, '05', ic_sup, seq, f"{seg.name}-{s_name}", start, end, c+1, div_config=div_config)
+                # 公路规范：03 洞身开挖
+                if is_highway and '03' in div_config:
+                    _add_batch(results, tunnel.name, tunnel.id, '03', ic_exc, seq, f"{seg.name}-{s_name}", start, end, c+1, div_config=div_config)
+                # 铁路/高铁规范：03 洞身开挖
+                elif not is_highway and '03' in div_config:
+                    _add_batch(results, tunnel.name, tunnel.id, '03', '01', seq, f"{seg.name}-{s_name}", start, end, c+1, div_config=div_config)
+                
+                # 公路规范：04 洞身衬砌 - 初期支护（喷射混凝土、锚杆、钢筋网、钢架）
+                if is_highway and '04' in div_config:
+                    for ic_sup in ['04', '05', '06', '07']:
+                        if ic_sup in div_config['04']['items']:
+                            _add_batch(results, tunnel.name, tunnel.id, '04', ic_sup, seq, f"{seg.name}-{s_name}", start, end, c+1, div_config=div_config)
+                # 铁路/高铁规范：04 支护 - 初期支护（按循环计算）
+                elif not is_highway and '04' in div_config:
+                    # 初期支护的分项代码（喷射混凝土、钢筋网、锚杆、钢架）
+                    for ic_key, ic_info in div_config['04']['items'].items():
+                        formula = ic_info.get('formula', '')
+                        if '循环' in formula:
+                            _add_batch(results, tunnel.name, tunnel.id, '04', ic_key, seq, f"{seg.name}-{s_name}", start, end, c+1, div_config=div_config)
 
 def _calculate_lining_and_auxiliary_batches(results, tunnel: Tunnel, rings: int, div_config: dict, is_highway: bool):
     if tunnel.trolley_length <= 0: return
@@ -345,21 +384,34 @@ def _calculate_lining_and_auxiliary_batches(results, tunnel: Tunnel, rings: int,
     for r in range(rings):
         start = base_t_start + r * tunnel.trolley_length * dir_sign; end = min(start + tunnel.trolley_length, base_t_end) if dir_sign == 1 else max(start - tunnel.trolley_length, base_t_end)
         if is_highway:
-            # 公路规范：衬砌部分直接输出字典里的 仰拱,仰拱回填,衬砌钢筋,混凝土衬砌，无衍生子项
-            if '06' in div_config:
-                for ic in div_config['06']['items'].keys():
-                    _add_batch(results, tunnel.name, tunnel.id, '06', ic, r+1, '洞身衬砌-二衬部分', start, end, r+1, div_config=div_config)
+            # 公路规范：04 洞身衬砌 - 二衬（仰拱、仰拱回填、衬砌钢筋、混凝土衬砌）
+            if '04' in div_config:
+                for ic in ['08', '09', '10', '11']:
+                    if ic in div_config['04']['items']:
+                        _add_batch(results, tunnel.name, tunnel.id, '04', ic, r+1, '洞身衬砌-二衬部分', start, end, r+1, div_config=div_config)
         else:
-            if '06' in div_config:
-                for idx, sub_item in enumerate(['施工', '钢筋', '混凝土']):
-                    seq = r * 3 + idx + 1
-                    if '01' in div_config['06']['items']: _add_batch(results, tunnel.name, tunnel.id, '06', '01', seq, f'仰拱-{sub_item}', start, end, r+1, div_config=div_config)
-                    if '02' in div_config['06']['items']: _add_batch(results, tunnel.name, tunnel.id, '06', '02', seq, f'拱墙-{sub_item}', start, end, r+1, div_config=div_config)
+            # 铁路/高铁规范：05 衬砌（仰拱、拱墙衬砌、回填注浆）
+            if '05' in div_config:
+                for ic in div_config['05']['items'].keys():
+                    _add_batch(results, tunnel.name, tunnel.id, '05', ic, r+1, '衬砌', start, end, r+1, div_config=div_config)
         
-        if '07' in div_config:
-            for ic in div_config['07']['items'].keys(): _add_batch(results, tunnel.name, tunnel.id, '07', ic, r+1, '防排水', start, end, r+1, div_config=div_config)
-        if '08' in div_config:
-            for ic in div_config['08']['items'].keys(): _add_batch(results, tunnel.name, tunnel.id, '08', ic, r+1, '路面/附属', start, end, r+1, div_config=div_config)
+        # 公路规范：05 防排水
+        if is_highway and '05' in div_config:
+            for ic in div_config['05']['items'].keys(): _add_batch(results, tunnel.name, tunnel.id, '05', ic, r+1, '防排水', start, end, r+1, div_config=div_config)
+        # 铁路/高铁规范：06 防水和排水
+        elif not is_highway and '06' in div_config:
+            for ic in div_config['06']['items'].keys(): _add_batch(results, tunnel.name, tunnel.id, '06', ic, r+1, '防排水', start, end, r+1, div_config=div_config)
+    
+    # 公路规范：06 路面 - 每座隧道只计算一次（基层+面层=2批），不按环数计算
+    if is_highway and '06' in div_config:
+        for ic in div_config['06']['items'].keys():
+            _add_batch(results, tunnel.name, tunnel.id, '06', ic, 1, '路面', base_t_start, base_t_end, 1, div_config=div_config)
+    # 铁路/高铁规范：07 辅助坑道
+    elif not is_highway and '07' in div_config:
+        for ic in div_config['07']['items'].keys(): _add_batch(results, tunnel.name, tunnel.id, '07', ic, 1, '辅助坑道', base_t_start, base_t_end, 1, div_config=div_config)
+    # 铁路/高铁规范：08 附属设施
+    if not is_highway and '08' in div_config:
+        for ic in div_config['08']['items'].keys(): _add_batch(results, tunnel.name, tunnel.id, '08', ic, 1, '附属设施', base_t_start, base_t_end, 1, div_config=div_config)
 
 def _generate_subitem_summary(results, tunnel: Tunnel, cd_cycles: int, tj_cycles: int, total_cycles: int, rings: int, div_config: dict):
     subitem_res = []
@@ -376,6 +428,7 @@ def _generate_subitem_summary(results, tunnel: Tunnel, cd_cycles: int, tj_cycles
             elif '台阶法' in name: calc_base = f"{tj_cycles} 循环"; calc_str = f"{calc_base} × 2 步/循环 = {count} 批"
             elif '循环' in rule: calc_base = f"{total_cycles} 循环"; calc_str = f"{calc_base} × 4 批/循环 = {count} 批"
             elif '环数×3' in rule: calc_base = f"{rings} 衬砌环"; calc_str = f"{calc_base} × 3 批/环 = {count} 批"
+            elif '每座隧道' in rule: calc_base = "1 座隧道"; calc_str = f"{calc_base} × 1 批/座 = {count} 批"
             elif '环数' in rule or '每环' in rule: calc_base = f"{rings} 衬砌环"; calc_str = f"{calc_base} × 1 批/环 = {count} 批"
             else: calc_str = f"按部位或基数累加 = {count} 批"
             subitem_res.append({'隧道': tunnel.name, '分部工程': d_data['name'], '分项工程': name, '计算基数(循环/环/洞口)': calc_base, '检验批计算式': calc_str, '检验批数量': count})
@@ -393,9 +446,10 @@ def calculate_single_tunnel(tunnel: Tunnel, base_div_config: dict, is_highway: b
             results['divisions'][d_code]['items'][i_code] = {'name': i_info['name'], 'batches': [], 'count': 0}
     
     cd_cycles, tj_cycles, total_cycles, rings = _calculate_cycles_and_rings(tunnel)
-    _calculate_portal_batches(results, tunnel, div_config, is_highway or is_high_speed)
-    _calculate_excavation_and_support_batches(results, tunnel, cd_cycles, tj_cycles, div_config, is_highway or is_high_speed)
-    _calculate_lining_and_auxiliary_batches(results, tunnel, rings, div_config, is_highway or is_high_speed)
+    # 铁路和高铁使用相同的非公路逻辑(is_highway=False)，只有公路使用公路逻辑
+    _calculate_portal_batches(results, tunnel, div_config, is_highway)
+    _calculate_excavation_and_support_batches(results, tunnel, cd_cycles, tj_cycles, div_config, is_highway)
+    _calculate_lining_and_auxiliary_batches(results, tunnel, rings, div_config, is_highway)
     subitem_res = _generate_subitem_summary(results, tunnel, cd_cycles, tj_cycles, total_cycles, rings, div_config)
     return results, subitem_res
 
@@ -416,14 +470,159 @@ def calculate_project_batches(project: Project, standard_type: str) -> Tuple[int
     return grand_total, pd.DataFrame(summary_list).fillna(0), pd.DataFrame(subitem_summary_flat), pd.DataFrame(all_batches_flat)
 
 # =============================================================================
-# 5. PDF 渲染器
+# 5. PDF 渲染器 (使用 PDF.js)
 # =============================================================================
 def render_pdf_viewer(pdf_bytes: bytes, filename: str):
     if len(pdf_bytes) / (1024 * 1024) > 15:
         st.warning(f"⚠️ 文件大于15MB，在线预览已禁用。"); st.download_button("📥 下载文件", data=pdf_bytes, file_name=filename, mime="application/pdf"); return
+
     with st.spinner("正在加载PDF预览..."):
         base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-        components.html(f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="850px" style="border:none;border-radius:8px;"></iframe>', height=900)
+
+        # 使用 PDF.js 渲染 PDF
+        pdf_js_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+            <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+            <style>
+                * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+                .pdf-container {{
+                    width: 100%;
+                    height: 850px;
+                    display: flex;
+                    flex-direction: column;
+                    background: #f5f5f5;
+                    border-radius: 8px;
+                    overflow: hidden;
+                }}
+                .toolbar {{
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 10px;
+                    padding: 10px;
+                    background: #2c3e50;
+                    color: white;
+                }}
+                .toolbar button {{
+                    padding: 8px 16px;
+                    border: none;
+                    border-radius: 4px;
+                    background: #3498db;
+                    color: white;
+                    cursor: pointer;
+                    font-size: 14px;
+                }}
+                .toolbar button:hover {{ background: #2980b9; }}
+                .toolbar button:disabled {{ background: #95a5a6; cursor: not-allowed; }}
+                .toolbar span {{ font-size: 14px; }}
+                #pdf-canvas {{
+                    flex: 1;
+                    overflow: auto;
+                    text-align: center;
+                    padding: 20px;
+                    background: #525659;
+                }}
+                #pdf-canvas canvas {{
+                    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+                    margin: 0 auto;
+                }}
+                .page-info {{
+                    min-width: 100px;
+                    text-align: center;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="pdf-container">
+                <div class="toolbar">
+                    <button id="prev-btn" onclick="prevPage()">◀ 上一页</button>
+                    <span class="page-info">
+                        第 <span id="page-num">1</span> / <span id="page-count">--</span> 页
+                    </span>
+                    <button id="next-btn" onclick="nextPage()">下一页 ▶</button>
+                    <button onclick="zoomOut()">➖ 缩小</button>
+                    <button onclick="zoomIn()">➕ 放大</button>
+                    <button onclick="downloadPdf()">📥 下载</button>
+                </div>
+                <div id="pdf-canvas">
+                    <canvas id="pdf-render"></canvas>
+                </div>
+            </div>
+            <script>
+                var pdfData = atob("{base64_pdf}");
+                var pdfDoc = null;
+                var pageNum = 1;
+                var scale = 1.2;
+                var canvas = document.getElementById('pdf-render');
+                var ctx = canvas.getContext('2d');
+
+                // 将 base64 转换为 ArrayBuffer
+                var bytes = new Uint8Array(pdfData.length);
+                for (var i = 0; i < pdfData.length; i++) {{
+                    bytes[i] = pdfData.charCodeAt(i);
+                }}
+
+                pdfjsLib.getDocument({{data: bytes}}).promise.then(function(pdf) {{
+                    pdfDoc = pdf;
+                    document.getElementById('page-count').textContent = pdf.numPages;
+                    renderPage(pageNum);
+                }});
+
+                function renderPage(num) {{
+                    pdfDoc.getPage(num).then(function(page) {{
+                        var viewport = page.getViewport({{scale: scale}});
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+
+                        var renderContext = {{
+                            canvasContext: ctx,
+                            viewport: viewport
+                        }};
+                        page.render(renderContext);
+
+                        document.getElementById('page-num').textContent = num;
+                        document.getElementById('prev-btn').disabled = num <= 1;
+                        document.getElementById('next-btn').disabled = num >= pdfDoc.numPages;
+                    }});
+                }}
+
+                function prevPage() {{
+                    if (pageNum <= 1) return;
+                    pageNum--;
+                    renderPage(pageNum);
+                }}
+
+                function nextPage() {{
+                    if (pageNum >= pdfDoc.numPages) return;
+                    pageNum++;
+                    renderPage(pageNum);
+                }}
+
+                function zoomIn() {{
+                    scale = Math.min(scale + 0.2, 3.0);
+                    renderPage(pageNum);
+                }}
+
+                function zoomOut() {{
+                    scale = Math.max(scale - 0.2, 0.5);
+                    renderPage(pageNum);
+                }}
+
+                function downloadPdf() {{
+                    var link = document.createElement('a');
+                    link.href = 'data:application/pdf;base64,{base64_pdf}';
+                    link.download = '{filename}';
+                    link.click();
+                }}
+            </script>
+        </body>
+        </html>
+        """
+        components.html(pdf_js_html, height=900)
 
 def get_pdf_bytes(standard_type: str) -> Optional[bytes]:
     import sys
@@ -500,7 +699,7 @@ def main():
             st.warning("无隧道数据。"); return
         
         c1, c2, c3 = st.columns([3, 1, 1])
-        with c1: target_tunnel = next(t for t in current_project.tunnels if t.name == st.selectbox("选择要编辑的隧道/通道:", [t.name for t in current_project.tunnels]))
+        with c1: target_tunnel_name = st.selectbox("选择要编辑的隧道/通道:", [t.name for t in current_project.tunnels], key=f"tunnel_select_{id(current_project)}"); target_tunnel = next((t for t in current_project.tunnels if t.name == target_tunnel_name), current_project.tunnels[0])
         with c2:
             st.write(""); st.write("")
             if st.button("➕ 新增隧道", use_container_width=True):
@@ -562,19 +761,56 @@ def main():
 
     elif page == "📊 检验批计算":
         st.markdown(f"<h2>📊 检验批计算 - {current_project.name}</h2>", unsafe_allow_html=True)
-        st.info(f"📌 **当前依据规范**：{st.session_state.standard_type}。提示：已精准对齐 2、洞口工程（7项）、4、洞身衬砌（11项）以及 6、路面 等规范分项内容。")
+        st.info(f"📌 **当前依据规范**：{st.session_state.standard_type}")
         with st.spinner("🚀 正在执行智能计算..."):
             total, df_sum, df_subitem, df_detail = calculate_project_batches(current_project, st.session_state.standard_type)
             st.session_state.last_result = (total, df_sum, df_subitem, df_detail)
         
-        if "铁路" in st.session_state.standard_type:
-            m2_title, m2_val = "初期支护占比", df_sum["05 初期支护"].sum() / total if total > 0 and "05 初期支护" in df_sum else 0
-            m3_title, m3_val = "洞身开挖", df_sum["04 洞身开挖"].sum() if "04 洞身开挖" in df_sum else 0
-            m4_title, m4_val = "衬砌工程", df_sum["06 衬砌工程"].sum() if "06 衬砌工程" in df_sum else 0
+        # 铁路和高铁列名映射（15.0版本格式）
+        if "高速" in st.session_state.standard_type or "高铁" in st.session_state.standard_type or "铁路" in st.session_state.standard_type:
+            # 铁路/高铁：03超前支护、04洞身开挖、05初期支护、06衬砌工程
+            # 由于配置结构变化，需要从配置中动态获取列名
+            # 配置中：03=洞身开挖, 04=支护(超前+初期), 05=衬砌
+            # 映射：03洞身开挖->04洞身开挖, 04支护->03超前支护+05初期支护
+            
+            # 从配置获取实际列名
+            actual_cols = list(df_sum.columns)
+            
+            # 查找相关列
+            excavation_col = None  # 04洞身开挖
+            support_col = None     # 05初期支护 (或04支护)
+            lining_col = None      # 06衬砌工程
+            
+            for col in actual_cols:
+                if '洞身开挖' in col:
+                    excavation_col = col
+                elif '支护' in col and '超前' not in col:
+                    support_col = col
+                elif '衬砌' in col:
+                    lining_col = col
+            
+            # 计算超前支护、洞身开挖、初期支护
+            advance_support_count = 0
+            excavation_count = 0
+            initial_support_count = 0
+            
+            for col in actual_cols:
+                if '超前支护' in col:
+                    advance_support_count += df_sum[col].sum()
+                elif '洞身开挖' in col:
+                    excavation_count += df_sum[col].sum()
+                elif '支护' in col and '超前' not in col:
+                    # 这是04支护，包含初期支护
+                    initial_support_count += df_sum[col].sum()
+            
+            # 使用映射后的名称
+            m2_title, m2_val = "初期支护占比", initial_support_count / total if total > 0 else 0
+            m3_title, m3_val = "洞身开挖", excavation_count
+            m4_title, m4_val = "衬砌工程", df_sum.get(lining_col, pd.Series([0])).sum() if lining_col else 0
         else:
-            m2_title, m2_val = "洞身衬砌占比(含初支)", df_sum["4、洞身衬砌"].sum() / total if total > 0 and "4、洞身衬砌" in df_sum else 0
-            m3_title, m3_val = "洞身开挖", df_sum["3、洞身开挖"].sum() if "3、洞身开挖" in df_sum else 0
-            m4_title, m4_val = "防排水", df_sum["5、防排水"].sum() if "5、防排水" in df_sum else 0
+            m2_title, m2_val = "洞身衬砌占比(含初支)", df_sum["04 洞身衬砌"].sum() / total if total > 0 and "04 洞身衬砌" in df_sum else 0
+            m3_title, m3_val = "洞身开挖", df_sum["03 洞身开挖"].sum() if "03 洞身开挖" in df_sum else 0
+            m4_title, m4_val = "防排水", df_sum["05 防排水"].sum() if "05 防排水" in df_sum else 0
 
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.markdown(f'<div class="metric-card bg-blue"><div class="metric-title">全线检验批总数</div><div class="metric-value">{total:,}</div></div>', unsafe_allow_html=True)
@@ -595,8 +831,14 @@ def main():
                 elif seg.method == '台阶法': formula = f"{cycles}循环×2步×1批={div_04}批 | {cycles}循环×2步×4项={div_05}批"
                 else: formula = "-"
                 
-                col_04_name = '04 洞身开挖' if "铁路" in st.session_state.standard_type else '3、洞身开挖'
-                col_05_name = '05 初期支护' if "铁路" in st.session_state.standard_type else '4、洞身衬砌(支护项)'
+                is_railway = "高速" in st.session_state.standard_type or "高铁" in st.session_state.standard_type or "铁路" in st.session_state.standard_type
+                # 铁路/高铁列名映射 (铁路: 03=洞身开挖, 04=支护, 05=衬砌)
+                if is_railway:
+                    col_04_name = '03 洞身开挖'
+                    col_05_name = '04 支护'
+                else:
+                    col_04_name = '03 洞身开挖'
+                    col_05_name = '04 洞身衬砌'
                 
                 segment_stats.append({'隧道/通道': tunnel.name, '部位名称': seg.name, '施工工法': seg.method, '段落长度(m)': round(seg.length, 3), '起点里程': format_mileage(min(seg.start_mileage, seg.end_mileage)), '终点里程': format_mileage(max(seg.start_mileage, seg.end_mileage)), '进尺(m)': seg.advance_per_cycle, '循环数': cycles if seg.method in ['CD法', '台阶法'] else '-', col_04_name: div_04, col_05_name: div_05, '检验批总数': total_batches, '计算说明': formula})
         
@@ -641,11 +883,65 @@ def main():
     elif page == "📖 标准查阅":
         st.markdown(f"<h2>📖 隧道工程施工质量验收标准查阅</h2>", unsafe_allow_html=True)
         st.info(f"💡 当前查阅标准：**{st.session_state.standard_type}**。可在左侧边栏进行切换。")
-        full_text_dict = JTG_F80_1_TEXT if "公路" in st.session_state.standard_type else TB10417_TEXT
-        tab1, tab2, tab3 = st.tabs(["📚 全文在线阅读", "🔍 全局智能检索", "📄 原版 PDF 阅览"])
+        full_text_dict = JTG_F80_1_TEXT if "公路" in st.session_state.standard_type else (TB10753_TEXT if "高铁" in st.session_state.standard_type else TB10417_TEXT)
+        tab1, tab2, tab3 = st.tabs(["📚 全文在线阅读(条文+图表)", "🔍 全局智能检索", "📄 原版 PDF 阅览"])
         with tab1:
-            selected_chapter = st.selectbox("📌 选择章节快速跳转:", list(full_text_dict.keys()))
-            st.markdown(f"<div class='standard-text'>{full_text_dict[selected_chapter]}</div>", unsafe_allow_html=True)
+            col_chapter, col_view_mode = st.columns([3, 1])
+            with col_chapter:
+                selected_chapter = st.selectbox("📌 选择章节快速跳转:", list(full_text_dict.keys()), key="chapter_select")
+            with col_view_mode:
+                view_mode = st.radio("显示模式", ["条文+图表", "仅条文", "仅图表"], horizontal=True, key="view_mode")
+
+            # 获取当前章节的图表配置
+            chapter_charts = get_charts_for_chapter(st.session_state.standard_type, selected_chapter)
+
+            # 根据显示模式展示内容
+            if view_mode == "条文+图表" and chapter_charts:
+                # 并排显示 - 图文并茂
+                chart_tab1, chart_tab2 = st.columns([1, 1])
+
+                with chart_tab1:
+                    st.markdown(f"#### 📜 {selected_chapter}")
+                    st.markdown(f"<div class='standard-text'>{full_text_dict[selected_chapter]}</div>", unsafe_allow_html=True)
+
+                with chart_tab2:
+                    st.markdown(f"#### 📊 相关图表")
+                    # 显示该章节的图表列表
+                    for idx, chart in enumerate(chapter_charts):
+                        with st.expander(f"�� {chart['title']}", expanded=True):
+                            chart_type_emoji = {"diagram": "📐", "chart": "📊", "photo": "📷", "table": "📋"}.get(chart.get("type", "diagram"), "📌")
+                            st.markdown(f"**类型**: {chart_type_emoji} {chart.get('type', '示意图')}")
+                            st.markdown(f"**说明**: {chart.get('desc', '暂无描述')}")
+                            # 如果有图片路径，可以在这里显示
+                            # st.image(chart.get("image_path", ""), caption=chart["title"])
+                            st.info(f"💡 {chart.get('desc', '')}")
+
+                # 在下方显示所有图表概览
+                with st.expander("📋 图表总览", expanded=False):
+                    for chart in chapter_charts:
+                        chart_type_emoji = {"diagram": "📐", "chart": "📊", "photo": "📷", "table": "📋"}.get(chart.get("type", "diagram"), "📌")
+                        st.markdown(f"- {chart_type_emoji} **{chart['title']}**: {chart.get('desc', '')}")
+
+            elif view_mode == "仅条文":
+                st.markdown(f"<div class='standard-text'>{full_text_dict[selected_chapter]}</div>", unsafe_allow_html=True)
+
+            elif view_mode == "仅图表":
+                if chapter_charts:
+                    for idx, chart in enumerate(chapter_charts):
+                        chart_type_emoji = {"diagram": "📐", "chart": "📊", "photo": "📷", "table": "📋"}.get(chart.get("type", "diagram"), "📌")
+                        with st.container():
+                            st.markdown(f"### {chart_type_emoji} {chart['title']}")
+                            st.markdown(f"**类型**: {chart.get('type', '示意图')}")
+                            st.markdown(f"**说明**: {chart.get('desc', '暂无描述')}")
+                            st.divider()
+                else:
+                    st.info("该章节暂无图表资料")
+
+            # 如果有图表，显示章节要点总结
+            if chapter_charts:
+                st.markdown("---")
+                st.markdown(f"💡 **章节要点**: {selected_chapter} 包含 {len(chapter_charts)} 个相关图表/表格")
+
         with tab2:
             search_query = st.text_input("🔍 输入检索词 (如: 洞身开挖, 喷射混凝土, 检验批)")
             if search_query:
@@ -657,8 +953,9 @@ def main():
                         for p in content.replace(search_query, f"<span class='highlight'>{search_query}</span>").split('\n'):
                             if f"<span class='highlight'>{search_query}</span>" in p: st.markdown(f"<div class='standard-text' style='margin-bottom: 10px; padding: 15px;'>{p}</div>", unsafe_allow_html=True)
                 if not found: st.warning(f"未检索到包含「{search_query}」的条款。")
+
         with tab3:
-            target_pdf_name = "JTG_F80_1-2017.pdf" if "公路" in st.session_state.standard_type else "TB10417-2018.pdf"
+            target_pdf_name = "JTG_F80_1-2017.pdf" if "公路" in st.session_state.standard_type else ("TB10753-2018.pdf" if "高铁" in st.session_state.standard_type else "TB10417-2018.pdf")
             st.write(f"📖 **原版 PDF 在线阅览:** `{target_pdf_name}`")
             pdf_bytes = get_pdf_bytes(st.session_state.standard_type)
             if pdf_bytes: render_pdf_viewer(pdf_bytes, target_pdf_name)

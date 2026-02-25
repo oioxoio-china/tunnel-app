@@ -168,3 +168,179 @@ JTG_F80_1_TEXT = {
     "10.20 管棚": """10.20.1 管棚套拱基底承载力应满足设计要求。
 两组管棚之间纵向水平搭接长度应不小于3m。"""
 }
+
+# =============================================================================
+# 规范图表配置 - 用于标准查阅页面显示相关图表
+# =============================================================================
+# 图表类型: diagram(示意图), chart(统计图), photo(现场照片), table(表格)
+STANDARD_CHARTS = {
+    # 铁路隧道 (TB 10417)
+    "TB10417": {
+        "3 基本规定": {
+            "charts": [
+                {"type": "diagram", "title": "检验批划分流程图", "desc": "展示单位工程→分部工程→分项工程→检验批的划分层次"},
+                {"type": "table", "title": "检验批质量验收标准", "desc": "主控项目100%合格，一般项目合格点率≥80%"}
+            ]
+        },
+        "5 超前支护": {
+            "charts": [
+                {"type": "diagram", "title": "超前支护类型示意图", "desc": "管棚、超前小导管、水平旋喷桩、超前锚杆布置图"},
+                {"type": "diagram", "title": "超前注浆工艺流程", "desc": "注浆压力、注浆量控制要点"}
+            ]
+        },
+        "6 洞口工程": {
+            "charts": [
+                {"type": "diagram", "title": "洞口结构布置图", "desc": "洞门、端翼墙、截水沟、边仰坡防护结构"},
+                {"type": "table", "title": "洞口开挖质量检验项目", "desc": "边仰坡坡度、防护厚度、混凝土强度"}
+            ]
+        },
+        "7 洞身开挖": {
+            "charts": [
+                {"type": "diagram", "title": "隧道开挖方法示意图", "desc": "全断面法、台阶法、CD法、CRD法、双侧壁导坑法"},
+                {"type": "diagram", "title": "超欠挖控制标准", "desc": "允许超挖值、欠挖控制要求"}
+            ]
+        },
+        "8 支护": {
+            "charts": [
+                {"type": "diagram", "title": "复合式衬砌结构图", "desc": "初期支护+防水板+二次衬砌组成"},
+                {"type": "diagram", "title": "喷射混凝土施工流程", "desc": "受喷面处理→喷射作业→养护"},
+                {"type": "table", "title": "锚杆施工质量标准", "desc": "长度、间距、灌浆饱满度要求"}
+            ]
+        },
+        "9 衬砌": {
+            "charts": [
+                {"type": "diagram", "title": "仰拱+拱墙衬砌示意图", "desc": "仰拱填充、拱墙衬砌施工顺序"},
+                {"type": "diagram", "title": "衬砌台车定位图", "desc": "二衬施工测量定位控制要点"},
+                {"type": "table", "title": "混凝土衬砌质量检验", "desc": "强度、厚度、密实度要求"}
+            ]
+        },
+        "10 防水和排水": {
+            "charts": [
+                {"type": "diagram", "title": "防排水系统构造图", "desc": "防水板、止水带、排水盲管、施工缝、变形缝布置"},
+                {"type": "diagram", "title": "防水板焊接示意图", "desc": "双焊缝搭接要求（搭接宽度≥15cm）"}
+            ]
+        }
+    },
+    # 公路隧道 (JTG F80/1)
+    "JTG_F80_1": {
+        "10.1 一般规定": {
+            "charts": [
+                {"type": "diagram", "title": "隧道工程划分体系", "desc": "单位工程→分部工程→分项工程划分"}
+            ]
+        },
+        "10.6 洞身开挖": {
+            "charts": [
+                {"type": "diagram", "title": "开挖方法适用条件", "desc": "不同围岩级别对应的开挖方法"},
+                {"type": "table", "title": "超欠挖允许值", "desc": "拱部允许超挖值、边墙允许超挖值"}
+            ]
+        },
+        "10.7 喷射混凝土": {
+            "charts": [
+                {"type": "diagram", "title": "喷射混凝土施工工艺", "desc": "湿喷工艺流程及参数控制"},
+                {"type": "table", "title": "喷射混凝土厚度检测", "desc": "平均厚度≥设计厚度，90%点≥设计厚度"}
+            ]
+        },
+        "10.8 锚杆": {
+            "charts": [
+                {"type": "diagram", "title": "系统锚杆布置图", "desc": "锚杆间距、排距、长度设计"},
+                {"type": "diagram", "title": "锚杆注浆示意图", "desc": "注浆饱满度控制"}
+            ]
+        },
+        "10.10 钢架": {
+            "charts": [
+                {"type": "diagram", "title": "钢架安装示意图", "desc": "钢架间距、连接、锁脚锚管布置"}
+            ]
+        },
+        "10.11 仰拱": {
+            "charts": [
+                {"type": "diagram", "title": "仰拱结构图", "desc": "仰拱厚度、钢筋布置、混凝土浇筑"}
+            ]
+        },
+        "10.14 混凝土衬砌": {
+            "charts": [
+                {"type": "diagram", "title": "二衬施工流程", "desc": "台车定位→钢筋绑扎→混凝土浇筑→脱模养护"},
+                {"type": "table", "title": "衬砌质量检验标准", "desc": "混凝土强度、厚度、裂缝控制"}
+            ]
+        },
+        "10.15 防水层": {
+            "charts": [
+                {"type": "diagram", "title": "防水层铺设示意图", "desc": "防水板固定、焊接、搭接要求"}
+            ]
+        },
+        "10.16 止水带": {
+            "charts": [
+                {"type": "diagram", "title": "止水带安装图", "desc": "中埋式止水带安装位置、接头处理"}
+            ]
+        },
+        "10.18 超前锚杆": {
+            "charts": [
+                {"type": "diagram", "title": "超前锚杆布置图", "desc": "纵向搭接长度、角度控制"}
+            ]
+        },
+        "10.19 超前小导管": {
+            "charts": [
+                {"type": "diagram", "title": "超前小导管注浆图", "desc": "注浆范围、压力、注浆量控制"}
+            ]
+        },
+        "10.20 管棚": {
+            "charts": [
+                {"type": "diagram", "title": "管棚超前支护图", "desc": "管棚布置、套拱施工、搭接长度"}
+            ]
+        }
+    },
+    # 高铁隧道 (TB 10753)
+    "TB10753": {
+        "6 超前支护": {
+            "charts": [
+                {"type": "diagram", "title": "高铁超前支护类型", "desc": "管棚、超前小导管、水平旋喷桩适用条件"}
+            ]
+        },
+        "7 洞身开挖": {
+            "charts": [
+                {"type": "diagram", "title": "高铁隧道开挖方法", "desc": "根据围岩级别选择开挖方法"}
+            ]
+        },
+        "8 支护": {
+            "charts": [
+                {"type": "diagram", "title": "高铁初期支护组成", "desc": "喷射混凝土+锚杆+钢筋网+钢架"},
+                {"type": "table", "title": "支护质量标准", "desc": "各分项工程质量要求"}
+            ]
+        },
+        "9 衬砌": {
+            "charts": [
+                {"type": "diagram", "title": "高铁衬砌结构", "desc": "仰拱+拱墙+回填注浆"},
+                {"type": "table", "title": "衬砌质量检验", "desc": "混凝土质量、厚度控制"}
+            ]
+        },
+        "10 防水和排水": {
+            "charts": [
+                {"type": "diagram", "title": "高铁防排水系统", "desc": "结构防水+排水设施"}
+            ]
+        }
+    }
+}
+
+def get_standard_key(standard_type: str) -> str:
+    """根据标准类型获取图表配置键名"""
+    if "公路" in standard_type:
+        return "JTG_F80_1"
+    elif "高铁" in standard_type:
+        return "TB10753"
+    else:
+        return "TB10417"
+
+def get_charts_for_chapter(standard_type: str, chapter: str) -> list:
+    """获取指定章节的图表配置"""
+    std_key = get_standard_key(standard_type)
+    std_charts = STANDARD_CHARTS.get(std_key, {})
+
+    # 精确匹配
+    if chapter in std_charts:
+        return std_charts[chapter].get("charts", [])
+
+    # 模糊匹配 - 检查章节是否包含在某个键中
+    for key, value in std_charts.items():
+        if key in chapter or chapter in key:
+            return value.get("charts", [])
+
+    return []
