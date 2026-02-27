@@ -9,7 +9,6 @@
 5. 修复GUI列名映射和衬砌计算问题
 6. 修复Streamlit元素重复ID问题
 
-作者: 编码助手
 """
 
 import streamlit as st
@@ -31,10 +30,15 @@ import streamlit.components.v1 as components
 # [核心引入] 导入外部静态配置，为代码大幅瘦身
 # =============================================================================
 try:
-    from standards_text import TB10417_TEXT, JTG_F80_1_TEXT, TB10753_TEXT, STANDARD_CHARTS, get_standard_key, get_charts_for_chapter
+    from standards_text import (
+        TB10417_TEXT, JTG_F80_1_TEXT, TB10753_TEXT,
+        STANDARD_CHARTS, get_standard_key, get_charts_for_chapter,
+        get_pdf_page, get_all_chapters_with_pages,
+        load_all_standards
+    )
     from default_config import RAILWAY_DIVISIONS, HIGHWAY_DIVISIONS, HIGH_SPEED_RAILWAY_DIVISIONS, ZK_DATA, YK_DATA, AK_DATA, BK_DATA, HTD_DATA
-except ImportError:
-    st.error("⚠️ 缺失依赖文件！请确保当前目录下存在 `standards_text.py` 和 `default_config.py` 文件。")
+except ImportError as e:
+    st.error(f"⚠️ 缺失依赖文件！请确保当前目录下存在相关文件: {e}")
     st.stop()
 
 # =============================================================================
@@ -470,14 +474,106 @@ def calculate_project_batches(project: Project, standard_type: str) -> Tuple[int
     return grand_total, pd.DataFrame(summary_list).fillna(0), pd.DataFrame(subitem_summary_flat), pd.DataFrame(all_batches_flat)
 
 # =============================================================================
-# 5. PDF 渲染器 (使用 PDF.js)
+# 5. PDF 书签解析器
 # =============================================================================
-def render_pdf_viewer(pdf_bytes: bytes, filename: str):
+import xml.etree.ElementTree as ET
+
+def parse_xml_bookmarks(filename: str) -> list:
+    """解析 XML 书签文件
+
+    Args:
+        filename: PDF 文件名，用于查找对应的书签文件
+
+    Returns:
+        书签列表，每项包含 title, page, level
+    """
+    import os
+
+    # 根据 PDF 文件名查找对应的书签文件
+    bookmark_file_map = {
+        "TB10417-2018.pdf": "【书签】TB10417-2018.xml",
+        "TB10753-2018.pdf": "【书签】TB10753-2018.xml",
+        "JTG_F80_1-2017.pdf": "【书签】JTG_F80_1-2017.xml"
+    }
+
+    bookmark_file = bookmark_file_map.get(filename, "")
+    bookmark_path = os.path.join(os.path.dirname(__file__), bookmark_file) if bookmark_file else None
+
+    # 如果本地路径找不到，尝试工作目录
+    if not bookmark_path or not os.path.exists(bookmark_path):
+        bookmark_path = bookmark_file
+
+    if not bookmark_path or not os.path.exists(bookmark_path):
+        return []
+
+    try:
+        tree = ET.parse(bookmark_path)
+        root = tree.getroot()
+
+        bookmarks = []
+
+        def parse_item(item, level=1):
+            """递归解析每个 ITEM"""
+            for child in item:
+                if child.tag == "ITEM":
+                    name = child.get("NAME", "")
+                    page = child.get("PAGE", "0")
+                    indent = int(child.get("INDENT", "1"))
+
+                    # 页码从0开始，转换为1开始
+                    page_num = int(page) + 1
+
+                    bookmarks.append({
+                        "title": name.strip(),
+                        "page": page_num,
+                        "level": indent
+                    })
+
+                    # 递归处理子节点
+                    parse_item(child, level + 1)
+
+        # 解析根节点下的所有 ITEM
+        for child in root:
+            if child.tag == "ITEM":
+                parse_item(child, 1)
+
+        return bookmarks
+    except Exception as e:
+        print(f"解析书签文件失败: {e}")
+        return []
+
+# =============================================================================
+# 6. PDF 渲染器 (使用 PDF.js)
+# =============================================================================
+def render_pdf_viewer(pdf_bytes: bytes, filename: str, initial_page: int = 1, bookmark_data: str = ""):
+    """渲染 PDF 预览器
+
+    Args:
+        pdf_bytes: PDF 文件字节数据
+        filename: PDF 文件名
+        initial_page: 初始显示页码（从 1 开始）
+        bookmark_data: JSON 格式的书签数据，用于目录导航（可选，默认从文件读取）
+    """
     if len(pdf_bytes) / (1024 * 1024) > 15:
         st.warning(f"⚠️ 文件大于15MB，在线预览已禁用。"); st.download_button("📥 下载文件", data=pdf_bytes, file_name=filename, mime="application/pdf"); return
 
     with st.spinner("正在加载PDF预览..."):
         base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+
+        # 处理书签数据 - 优先使用传入的书签，否则从文件读取
+        bookmark_json = "[]"
+        if bookmark_data:
+            import json
+            try:
+                bookmark_json = json.dumps(bookmark_data, ensure_ascii=False)
+            except:
+                bookmark_json = "[]"
+        else:
+            # 从 XML 文件读取书签
+            xml_bookmarks = parse_xml_bookmarks(filename)
+            if xml_bookmarks:
+                import json
+                bookmark_json = json.dumps(xml_bookmarks, ensure_ascii=False)
 
         # 使用 PDF.js 渲染 PDF
         pdf_js_html = f"""
@@ -491,11 +587,75 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
                 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
                 .pdf-container {{
                     width: 100%;
-                    height: 850px;
+                    height: 900px;
                     display: flex;
-                    flex-direction: column;
+                    flex-direction: row;
                     background: #f5f5f5;
                     border-radius: 8px;
+                    overflow: hidden;
+                    border: 1px solid #ddd;
+                }}
+                .bookmark-panel {{
+                    width: 280px;
+                    min-width: 280px;
+                    background: #fff;
+                    border-right: 1px solid #ddd;
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                }}
+                .bookmark-header {{
+                    padding: 12px;
+                    background: #2c3e50;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 14px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }}
+                .bookmark-list {{
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 8px;
+                }}
+                .bookmark-item {{
+                    padding: 8px 12px;
+                    cursor: pointer;
+                    border-radius: 4px;
+                    margin-bottom: 4px;
+                    font-size: 13px;
+                    color: #333;
+                    transition: background 0.2s;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }}
+                .bookmark-item:hover {{
+                    background: #e8f4fc;
+                    color: #0066cc;
+                }}
+                .bookmark-item.active {{
+                    background: #3498db;
+                    color: white;
+                }}
+                .bookmark-item[data-level="1"] {{
+                    font-weight: bold;
+                    padding-left: 8px;
+                }}
+                .bookmark-item[data-level="2"] {{
+                    padding-left: 24px;
+                    font-size: 12px;
+                }}
+                .bookmark-item[data-level="3"] {{
+                    padding-left: 40px;
+                    font-size: 12px;
+                    color: #666;
+                }}
+                .pdf-main {{
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
                     overflow: hidden;
                 }}
                 .toolbar {{
@@ -506,6 +666,7 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
                     padding: 10px;
                     background: #2c3e50;
                     color: white;
+                    flex-wrap: wrap;
                 }}
                 .toolbar button {{
                     padding: 8px 16px;
@@ -519,6 +680,18 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
                 .toolbar button:hover {{ background: #2980b9; }}
                 .toolbar button:disabled {{ background: #95a5a6; cursor: not-allowed; }}
                 .toolbar span {{ font-size: 14px; }}
+                .toolbar input[type="number"] {{
+                    width: 60px;
+                    padding: 6px;
+                    border: none;
+                    border-radius: 4px;
+                    text-align: center;
+                }}
+                .page-nav {{
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                }}
                 #pdf-canvas {{
                     flex: 1;
                     overflow: auto;
@@ -534,31 +707,67 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
                     min-width: 100px;
                     text-align: center;
                 }}
+                .search-box {{
+                    padding: 8px 12px;
+                    border-bottom: 1px solid #eee;
+                }}
+                .search-box input {{
+                    width: 100%;
+                    padding: 8px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    font-size: 13px;
+                }}
+                .empty-bookmark {{
+                    padding: 20px;
+                    text-align: center;
+                    color: #999;
+                    font-size: 13px;
+                }}
             </style>
         </head>
         <body>
             <div class="pdf-container">
-                <div class="toolbar">
-                    <button id="prev-btn" onclick="prevPage()">◀ 上一页</button>
-                    <span class="page-info">
-                        第 <span id="page-num">1</span> / <span id="page-count">--</span> 页
-                    </span>
-                    <button id="next-btn" onclick="nextPage()">下一页 ▶</button>
-                    <button onclick="zoomOut()">➖ 缩小</button>
-                    <button onclick="zoomIn()">➕ 放大</button>
-                    <button onclick="downloadPdf()">📥 下载</button>
+                <div class="bookmark-panel">
+                    <div class="bookmark-header">
+                        <span>📑</span> 书签目录
+                    </div>
+                    <div class="search-box">
+                        <input type="text" id="bookmark-search" placeholder="搜索书签..." oninput="filterBookmarks(this.value)">
+                    </div>
+                    <div class="bookmark-list" id="bookmark-list">
+                        <div class="empty-bookmark">正在加载目录...</div>
+                    </div>
                 </div>
-                <div id="pdf-canvas">
-                    <canvas id="pdf-render"></canvas>
+                <div class="pdf-main">
+                    <div class="toolbar">
+                        <div class="page-nav">
+                            <button id="prev-btn" onclick="prevPage()">◀</button>
+                            <span>第</span>
+                            <input type="number" id="page-input" value="{initial_page}" min="1" onchange="goToPage(this.value)">
+                            <span> / <span id="page-count">--</span> 页</span>
+                            <button id="next-btn" onclick="nextPage()">▶</button>
+                        </div>
+                        <button onclick="zoomOut()">➖</button>
+                        <span id="zoom-level">100%</span>
+                        <button onclick="zoomIn()">➕</button>
+                        <button onclick="fitWidth()">↔️ 适应宽度</button>
+                        <button onclick="downloadPdf()">📥</button>
+                    </div>
+                    <div id="pdf-canvas">
+                        <canvas id="pdf-render"></canvas>
+                    </div>
                 </div>
             </div>
             <script>
                 var pdfData = atob("{base64_pdf}");
                 var pdfDoc = null;
-                var pageNum = 1;
+                var pageNum = {initial_page};
                 var scale = 1.2;
                 var canvas = document.getElementById('pdf-render');
                 var ctx = canvas.getContext('2d');
+                var bookmarks = {bookmark_json};
+                var outlineLoaded = false;
 
                 // 将 base64 转换为 ArrayBuffer
                 var bytes = new Uint8Array(pdfData.length);
@@ -569,8 +778,132 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
                 pdfjsLib.getDocument({{data: bytes}}).promise.then(function(pdf) {{
                     pdfDoc = pdf;
                     document.getElementById('page-count').textContent = pdf.numPages;
+                    document.getElementById('page-input').max = pdf.numPages;
                     renderPage(pageNum);
+
+                    // 加载 PDF 书签
+                    loadPDFBookmarks(pdf);
+
+                    // 如果有预定义书签，添加到列表
+                    if (bookmarks && bookmarks.length > 0) {{
+                        renderBookmarks(bookmarks);
+                    }}
                 }});
+
+                // 从 PDF 加载书签
+                async function loadPDFBookmarks(pdf) {{
+                    try {{
+                        // 直接调用 getOutline，不需要检查 catalog
+                        var outline = await pdf.getOutline();
+                        if (outline && outline.length > 0) {{
+                            // 需要解析每个书签目标页码
+                            var flatOutline = await flattenOutlineWithPages(outline, 1, pdf);
+                            if (flatOutline.length > 0) {{
+                                renderBookmarks(flatOutline);
+                            }}
+                        }} else {{
+                            // 没有书签，显示提示
+                            document.getElementById('bookmark-list').innerHTML = '<div class="empty-bookmark">该 PDF 无内置书签</div>';
+                        }}
+                    }} catch (e) {{
+                        console.log('PDF 书签加载失败:', e);
+                        document.getElementById('bookmark-list').innerHTML = '<div class="empty-bookmark">无法加载书签</div>';
+                    }}
+                }}
+
+                // 将书签展平为列表（带页码解析）
+                async function flattenOutlineWithPages(outline, level, pdf) {{
+                    var result = [];
+                    for (var i = 0; i < outline.length; i++) {{
+                        var item = outline[i];
+                        var pageNum = 1;
+
+                        // 解析目标页码
+                        try {{
+                            if (item.dest) {{
+                                var dest = item.dest;
+                                if (typeof dest === 'string') {{
+                                    // 目标可能是引用名称
+                                    var ref = await pdf.getDestination(dest);
+                                    if (ref) {{
+                                        var pageIndex = await pdf.getPageIndex(ref[0]);
+                                        pageNum = pageIndex + 1;
+                                    }}
+                                }} else if (Array.isArray(dest)) {{
+                                    var ref = dest[0];
+                                    var pageIndex = await pdf.getPageIndex(ref);
+                                    pageNum = pageIndex + 1;
+                                }}
+                            }} else if (item.action === 'GoTo' && item.dest) {{
+                                var dest = item.dest;
+                                if (Array.isArray(dest)) {{
+                                    var ref = dest[0];
+                                    var pageIndex = await pdf.getPageIndex(ref);
+                                    pageNum = pageIndex + 1;
+                                }}
+                            }}
+                        }} catch (e) {{
+                            console.log('解析书签页码失败:', e);
+                        }}
+
+                        result.push({{
+                            title: item.title || '未命名',
+                            page: pageNum,
+                            level: level
+                        }});
+
+                        if (item.items && item.items.length > 0) {{
+                            var childItems = await flattenOutlineWithPages(item.items, level + 1, pdf);
+                            result = result.concat(childItems);
+                        }}
+                    }}
+                    return result;
+                }}
+
+                // 渲染书签列表
+                function renderBookmarks(list) {{
+                    var container = document.getElementById('bookmark-list');
+                    if (!list || list.length === 0) {{
+                        container.innerHTML = '<div class="empty-bookmark">暂无书签</div>';
+                        return;
+                    }}
+
+                    var html = '';
+                    for (var i = 0; i < list.length; i++) {{
+                        var bm = list[i];
+                        var pageInfo = typeof bm.page === 'object' ? bm.page[0].num : (bm.page ? bm.page : '?');
+                        html += '<div class="bookmark-item" data-level="' + bm.level + '" data-page="' + pageInfo + '" onclick="goToBookmark(' + pageInfo + ', this)">' + bm.title + '</div>';
+                    }}
+                    container.innerHTML = html;
+                }}
+
+                // 过滤书签
+                function filterBookmarks(keyword) {{
+                    var items = document.querySelectorAll('.bookmark-item');
+                    keyword = keyword.toLowerCase();
+                    for (var i = 0; i < items.length; i++) {{
+                        var title = items[i].textContent.toLowerCase();
+                        items[i].style.display = title.indexOf(keyword) >= 0 ? 'block' : 'none';
+                    }}
+                }}
+
+                // 跳转到书签
+                function goToBookmark(pageNum, elem) {{
+                    // 更新激活状态
+                    var items = document.querySelectorAll('.bookmark-item');
+                    for (var i = 0; i < items.length; i++) {{
+                        items[i].classList.remove('active');
+                    }}
+                    elem.classList.add('active');
+
+                    // 跳转页面
+                    var num = parseInt(pageNum);
+                    if (num >= 1 && num <= pdfDoc.numPages) {{
+                        pageNum = num;  // 更新全局页码变量
+                        renderPage(num);
+                        document.getElementById('page-input').value = num;
+                    }}
+                }}
 
                 function renderPage(num) {{
                     pdfDoc.getPage(num).then(function(page) {{
@@ -585,9 +918,28 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
                         page.render(renderContext);
 
                         document.getElementById('page-num').textContent = num;
-                        document.getElementById('prev-btn').disabled = num <= 1;
-                        document.getElementById('next-btn').disabled = num >= pdfDoc.numPages;
+                        document.getElementById('page-input').value = num;
+                        document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+                        if (document.getElementById('prev-btn')) {{
+                            document.getElementById('prev-btn').disabled = num <= 1;
+                            document.getElementById('next-btn').disabled = num >= pdfDoc.numPages;
+                        }}
+
+                        // 更新当前页对应的书签激活状态
+                        updateActiveBookmark(num);
                     }});
+                }}
+
+                function updateActiveBookmark(pageNum) {{
+                    var items = document.querySelectorAll('.bookmark-item');
+                    for (var i = 0; i < items.length; i++) {{
+                        var itemPage = parseInt(items[i].getAttribute('data-page'));
+                        if (itemPage === pageNum) {{
+                            items[i].classList.add('active');
+                        }} else {{
+                            items[i].classList.remove('active');
+                        }}
+                    }}
                 }}
 
                 function prevPage() {{
@@ -602,6 +954,14 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
                     renderPage(pageNum);
                 }}
 
+                function goToPage(val) {{
+                    var num = parseInt(val);
+                    if (num >= 1 && num <= pdfDoc.numPages) {{
+                        pageNum = num;
+                        renderPage(pageNum);
+                    }}
+                }}
+
                 function zoomIn() {{
                     scale = Math.min(scale + 0.2, 3.0);
                     renderPage(pageNum);
@@ -612,17 +972,35 @@ def render_pdf_viewer(pdf_bytes: bytes, filename: str):
                     renderPage(pageNum);
                 }}
 
+                function fitWidth() {{
+                    if (canvas.parentElement && pdfDoc) {{
+                        pdfDoc.getPage(pageNum).then(function(page) {{
+                            var containerWidth = canvas.parentElement.clientWidth - 40;
+                            var viewport = page.getViewport({{scale: 1}});
+                            scale = containerWidth / viewport.width;
+                            renderPage(pageNum);
+                        }});
+                    }}
+                }}
+
                 function downloadPdf() {{
                     var link = document.createElement('a');
                     link.href = 'data:application/pdf;base64,{base64_pdf}';
                     link.download = '{filename}';
                     link.click();
                 }}
+
+                // 监听页面输入框回车
+                document.getElementById('page-input').addEventListener('keypress', function(e) {{
+                    if (e.key === 'Enter') {{
+                        goToPage(this.value);
+                    }}
+                }});
             </script>
         </body>
         </html>
         """
-        components.html(pdf_js_html, height=900)
+        components.html(pdf_js_html, height=950)
 
 def get_pdf_bytes(standard_type: str) -> Optional[bytes]:
     import sys
@@ -883,86 +1261,22 @@ def main():
     elif page == "📖 标准查阅":
         st.markdown(f"<h2>📖 隧道工程施工质量验收标准查阅</h2>", unsafe_allow_html=True)
         st.info(f"💡 当前查阅标准：**{st.session_state.standard_type}**。可在左侧边栏进行切换。")
-        full_text_dict = JTG_F80_1_TEXT if "公路" in st.session_state.standard_type else (TB10753_TEXT if "高铁" in st.session_state.standard_type else TB10417_TEXT)
-        tab1, tab2, tab3 = st.tabs(["📚 全文在线阅读(条文+图表)", "🔍 全局智能检索", "📄 原版 PDF 阅览"])
-        with tab1:
-            col_chapter, col_view_mode = st.columns([3, 1])
-            with col_chapter:
-                selected_chapter = st.selectbox("📌 选择章节快速跳转:", list(full_text_dict.keys()), key="chapter_select")
-            with col_view_mode:
-                view_mode = st.radio("显示模式", ["条文+图表", "仅条文", "仅图表"], horizontal=True, key="view_mode")
 
-            # 获取当前章节的图表配置
-            chapter_charts = get_charts_for_chapter(st.session_state.standard_type, selected_chapter)
+        # 初始化 PDF 查看相关状态
+        if 'pdf_initial_page' not in st.session_state:
+            st.session_state.pdf_initial_page = 1
 
-            # 根据显示模式展示内容
-            if view_mode == "条文+图表" and chapter_charts:
-                # 并排显示 - 图文并茂
-                chart_tab1, chart_tab2 = st.columns([1, 1])
-
-                with chart_tab1:
-                    st.markdown(f"#### 📜 {selected_chapter}")
-                    st.markdown(f"<div class='standard-text'>{full_text_dict[selected_chapter]}</div>", unsafe_allow_html=True)
-
-                with chart_tab2:
-                    st.markdown(f"#### 📊 相关图表")
-                    # 显示该章节的图表列表
-                    for idx, chart in enumerate(chapter_charts):
-                        with st.expander(f"�� {chart['title']}", expanded=True):
-                            chart_type_emoji = {"diagram": "📐", "chart": "📊", "photo": "📷", "table": "📋"}.get(chart.get("type", "diagram"), "📌")
-                            st.markdown(f"**类型**: {chart_type_emoji} {chart.get('type', '示意图')}")
-                            st.markdown(f"**说明**: {chart.get('desc', '暂无描述')}")
-                            # 如果有图片路径，可以在这里显示
-                            # st.image(chart.get("image_path", ""), caption=chart["title"])
-                            st.info(f"💡 {chart.get('desc', '')}")
-
-                # 在下方显示所有图表概览
-                with st.expander("📋 图表总览", expanded=False):
-                    for chart in chapter_charts:
-                        chart_type_emoji = {"diagram": "📐", "chart": "📊", "photo": "📷", "table": "📋"}.get(chart.get("type", "diagram"), "📌")
-                        st.markdown(f"- {chart_type_emoji} **{chart['title']}**: {chart.get('desc', '')}")
-
-            elif view_mode == "仅条文":
-                st.markdown(f"<div class='standard-text'>{full_text_dict[selected_chapter]}</div>", unsafe_allow_html=True)
-
-            elif view_mode == "仅图表":
-                if chapter_charts:
-                    for idx, chart in enumerate(chapter_charts):
-                        chart_type_emoji = {"diagram": "📐", "chart": "📊", "photo": "📷", "table": "📋"}.get(chart.get("type", "diagram"), "📌")
-                        with st.container():
-                            st.markdown(f"### {chart_type_emoji} {chart['title']}")
-                            st.markdown(f"**类型**: {chart.get('type', '示意图')}")
-                            st.markdown(f"**说明**: {chart.get('desc', '暂无描述')}")
-                            st.divider()
-                else:
-                    st.info("该章节暂无图表资料")
-
-            # 如果有图表，显示章节要点总结
-            if chapter_charts:
-                st.markdown("---")
-                st.markdown(f"💡 **章节要点**: {selected_chapter} 包含 {len(chapter_charts)} 个相关图表/表格")
-
-        with tab2:
-            search_query = st.text_input("🔍 输入检索词 (如: 洞身开挖, 喷射混凝土, 检验批)")
-            if search_query:
-                found = False
-                for chapter, content in full_text_dict.items():
-                    if search_query in content:
-                        found = True
-                        st.markdown(f"#### 📍 【{chapter}】")
-                        for p in content.replace(search_query, f"<span class='highlight'>{search_query}</span>").split('\n'):
-                            if f"<span class='highlight'>{search_query}</span>" in p: st.markdown(f"<div class='standard-text' style='margin-bottom: 10px; padding: 15px;'>{p}</div>", unsafe_allow_html=True)
-                if not found: st.warning(f"未检索到包含「{search_query}」的条款。")
-
-        with tab3:
-            target_pdf_name = "JTG_F80_1-2017.pdf" if "公路" in st.session_state.standard_type else ("TB10753-2018.pdf" if "高铁" in st.session_state.standard_type else "TB10417-2018.pdf")
-            st.write(f"📖 **原版 PDF 在线阅览:** `{target_pdf_name}`")
-            pdf_bytes = get_pdf_bytes(st.session_state.standard_type)
-            if pdf_bytes: render_pdf_viewer(pdf_bytes, target_pdf_name)
-            else:
-                st.warning(f"⚠️ 系统未能找到内置的 PDF 文件 `{target_pdf_name}`。")
-                uploaded_pdf = st.file_uploader("📥 手动上传 PDF 规范进行阅览", type=['pdf'])
-                if uploaded_pdf: render_pdf_viewer(uploaded_pdf.read(), uploaded_pdf.name)
+        # 只保留原版 PDF 阅览
+        target_pdf_name = "JTG_F80_1-2017.pdf" if "公路" in st.session_state.standard_type else ("TB10753-2018.pdf" if "高铁" in st.session_state.standard_type else "TB10417-2018.pdf")
+        # 获取初始页码（从章节跳转时使用）
+        initial_page = st.session_state.get('pdf_initial_page', 1)
+        st.write(f"📖 **原版 PDF 在线阅览:** `{target_pdf_name}`")
+        pdf_bytes = get_pdf_bytes(st.session_state.standard_type)
+        if pdf_bytes: render_pdf_viewer(pdf_bytes, target_pdf_name, initial_page=initial_page)
+        else:
+            st.warning(f"⚠️ 系统未能找到内置的 PDF 文件 `{target_pdf_name}`。")
+            uploaded_pdf = st.file_uploader("📥 手动上传 PDF 规范进行阅览", type=['pdf'])
+            if uploaded_pdf: render_pdf_viewer(uploaded_pdf.read(), uploaded_pdf.name, initial_page=initial_page)
 
 if __name__ == "__main__":
     main()
